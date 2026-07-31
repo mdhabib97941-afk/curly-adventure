@@ -625,6 +625,43 @@ app.get('/api/btc-radar', async(req, res) => {
             console.error("Failed to fetch CVD", e.message);
         }
 
+        // --- NEW: Spoofing Analysis (Max vs Avg) ---
+        const last60 = await dbAll(`SELECT * FROM btc_deep_liquidity ORDER BY id DESC LIMIT 60`);
+        let spoofStats = {
+            '5m': { totalBids: 0, realBids: 0, fakeBids: 0, totalAsks: 0, realAsks: 0, fakeAsks: 0 },
+            '15m': { totalBids: 0, realBids: 0, fakeBids: 0, totalAsks: 0, realAsks: 0, fakeAsks: 0 },
+            '1h': { totalBids: 0, realBids: 0, fakeBids: 0, totalAsks: 0, realAsks: 0, fakeAsks: 0 }
+        };
+        
+        if (last60 && last60.length > 0) {
+            const calculateSpoof = (rows) => {
+                if(rows.length === 0) return null;
+                let sumBids = 0, sumAsks = 0, maxBids = 0, maxAsks = 0;
+                rows.forEach(r => {
+                    const bids = r.bid_vol_1 + r.bid_vol_2 + r.bid_vol_5;
+                    const asks = r.ask_vol_1 + r.ask_vol_2 + r.ask_vol_5;
+                    sumBids += bids;
+                    sumAsks += asks;
+                    if(bids > maxBids) maxBids = bids;
+                    if(asks > maxAsks) maxAsks = asks;
+                });
+                const avgBids = sumBids / rows.length;
+                const avgAsks = sumAsks / rows.length;
+                return {
+                    totalBids: maxBids,
+                    realBids: avgBids,
+                    fakeBids: maxBids - avgBids,
+                    totalAsks: maxAsks,
+                    realAsks: avgAsks,
+                    fakeAsks: maxAsks - avgAsks
+                };
+            };
+            
+            spoofStats['5m'] = calculateSpoof(last60.slice(0, 5)) || spoofStats['5m'];
+            spoofStats['15m'] = calculateSpoof(last60.slice(0, 15)) || spoofStats['15m'];
+            spoofStats['1h'] = calculateSpoof(last60) || spoofStats['1h'];
+        }
+
         res.json({
             success: true,
             data: {
@@ -632,7 +669,8 @@ app.get('/api/btc-radar', async(req, res) => {
                 live: avg, // Filtered TWAP data
                 m15: m15 || avg,
                 h1: h1 || avg,
-                cvdData
+                cvdData,
+                spoofStats
             }
         });
     } catch(err) {
