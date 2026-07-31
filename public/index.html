@@ -1652,6 +1652,25 @@ async function fetchFundamentals() {
     }
 }
 
+async function fetchDefiLlama() {
+    try {
+        const res = await fetch('https://stablecoins.llama.fi/stablecoins?includePrices=false');
+        const data = await res.json();
+        let usdt = data.peggedAssets.find(a => a.symbol === 'USDT');
+        let usdc = data.peggedAssets.find(a => a.symbol === 'USDC');
+        
+        let usdtSupply = usdt ? usdt.circulating.peggedUSD : 0;
+        let usdcSupply = usdc ? usdc.circulating.peggedUSD : 0;
+        
+        document.getElementById('llamaUsdt').innerText = '$' + (usdtSupply / 1e9).toFixed(2) + 'B';
+        document.getElementById('llamaUsdc').innerText = '$' + (usdcSupply / 1e9).toFixed(2) + 'B';
+        document.getElementById('llamaTotal').innerText = '$' + ((usdtSupply + usdcSupply) / 1e9).toFixed(2) + 'B';
+        document.getElementById('llamaLoading').innerText = 'Live';
+    } catch (e) {
+        document.getElementById('llamaLoading').innerText = 'Failed';
+    }
+}
+
 // Fetch trending / newly listed coins
 async function fetchTrendingCoins() {
     const el = document.getElementById('fundTrendingList');
