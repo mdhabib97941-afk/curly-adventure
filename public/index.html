@@ -170,6 +170,8 @@
 
 <div class="nav-tabs">
     <div class="nav-tab active" onclick="switchPage('replayTab',this)">🪙 Live Chart & Divergence</div>
+    <div class="nav-tab" onclick="switchPage('liveTab',this)">🐋 Order Flow</div>
+    <div class="nav-tab" onclick="switchPage('fundamentalsTab',this)">📈 Fundamentals</div>
     <div class="nav-tab" onclick="switchPage('usdtTab',this)">💵 USDT.D</div>
 </div>
 
@@ -233,6 +235,97 @@
         </div>
     </div>
 
+
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     PAGE 2: ORDER FLOW
+════════════════════════════════════════════════════════════════ -->
+<div class="page" id="liveTab">
+    <div style="display:flex; margin-bottom:12px;">
+        <div id="timeframeBiasBadge" style="flex:1; padding:12px; border-radius:8px; background:var(--s2); border:1px solid var(--border); display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:1rem; letter-spacing:0.5px;">
+            ⏳ Loading Timeframe Bias...
+        </div>
+    </div>
+    <div id="sigBanner" class="sig-banner">
+        <div class="sig-tag" id="sigTag">—</div>
+        <div class="sig-body">
+            <div class="sig-lbl">Market Signal</div>
+            <div class="sig-text" id="sigReason">Loading...</div>
+            <div class="sig-pts" id="sigPts"></div>
+            <div class="lvls" id="sigLvls"></div>
+        </div>
+    </div>
+    <div class="grid2" style="margin-bottom:16px;">
+        <div class="card">
+            <div class="card-hdr"><span class="card-icon">💰</span><span class="card-title">Bid Walls (Buy Support)</span><span class="badge bd-buy">BUY SIDE</span></div>
+            <div class="card-body" id="bidWalls"><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>
+        </div>
+        <div class="card">
+            <div class="card-hdr"><span class="card-icon">🏔️</span><span class="card-title">Ask Walls (Sell Resistance)</span><span class="badge bd-sell">SELL SIDE</span></div>
+            <div class="card-body" id="askWalls"><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>
+        </div>
+    </div>
+    <div class="card" style="margin-bottom:16px;">
+        <div class="card-hdr"><span class="card-icon">📊</span><span class="card-title">Volume Profile (Price Levels)</span><span class="badge bd-blue">TOP 10</span></div>
+        <div class="card-body" id="volProfile"><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>
+    </div>
+    <div class="grid2">
+        <div class="card">
+            <div class="card-hdr"><span class="card-icon">🐋</span><span class="card-title">Large Trades (Whale Activity)</span><span class="badge bd-purple">WHALE</span></div>
+            <div class="card-body" id="whaleList"><div class="sk"></div><div class="sk"></div></div>
+        </div>
+        <div class="card">
+            <div class="card-hdr"><span class="card-icon">⚡</span><span class="card-title">Recent Liquidations</span><span class="badge bd-warn">LIQD</span></div>
+            <div class="card-body" id="liqdList"><div class="sk"></div><div class="sk"></div></div>
+        </div>
+    </div>
+
+    <!-- REAL-TIME WHALE TRACKER -->
+    <div class="card" style="margin-top:16px;">
+        <div class="card-hdr" style="flex-wrap:wrap;gap:8px;">
+            <span class="card-icon">🐳</span>
+            <span class="card-title">Real-Time Whale Tracker</span>
+            <span class="badge" style="background:rgba(0,229,255,.15);color:var(--cyan);border:1px solid var(--cyan);" id="whaleLiveTag">● LIVE</span>
+            <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
+                <span style="font-size:.75rem;color:var(--muted);">Min $</span>
+                <select id="whaleThreshold" onchange="updateWhaleThreshold()" style="padding:4px 8px;background:var(--s2);color:var(--text);border:1px solid var(--border);border-radius:6px;font-size:.78rem;">
+                    <option value="10000">10K</option>
+                    <option value="50000" selected>50K</option>
+                    <option value="100000">100K</option>
+                    <option value="500000">500K</option>
+                    <option value="1000000">1M</option>
+                </select>
+            </div>
+        </div>
+        <div class="card-body" style="padding:0;">
+            <!-- Pressure Bar -->
+            <div style="padding:12px 14px 8px;">
+                <div style="display:flex;justify-content:space-between;font-size:.75rem;margin-bottom:4px;">
+                    <span style="color:var(--buy);font-weight:700;" id="whaleBuyPct">BUY 50%</span>
+                    <span style="color:var(--muted);">Whale Pressure</span>
+                    <span style="color:var(--sell);font-weight:700;" id="whaleSellPct">SELL 50%</span>
+                </div>
+                <div style="background:var(--s2);border-radius:4px;height:8px;overflow:hidden;">
+                    <div id="whalePressureBar" style="background:linear-gradient(90deg,var(--buy),var(--sell));width:50%;height:8px;border-radius:4px;transition:width .5s;"></div>
+                </div>
+                <div style="display:flex;justify-content:space-between;font-size:.72rem;margin-top:4px;color:var(--muted);">
+                    <span>Total Buy: <strong id="whaleTotalBuy" style="color:var(--buy);">$0</strong></span>
+                    <span>Total Sell: <strong id="whaleTotalSell" style="color:var(--sell);">$0</strong></span>
+                </div>
+            </div>
+            <!-- Live Feed -->
+            <div id="whaleFeed" style="max-height:300px;overflow-y:auto;border-top:1px solid var(--border);">
+                <div style="padding:20px;text-align:center;color:var(--muted);font-size:.82rem;">🔌 Connecting to Binance trade stream...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     PAGE: FUNDAMENTALS
+════════════════════════════════════════════════════════════════ -->
+<div class="page" id="fundamentalsTab">
     <!-- BTC Deep Liquidity & Delta Radar -->
     <div class="card" style="margin-bottom: 20px;">
         <div class="card-hdr" style="background:var(--s2); display:flex; justify-content:space-between;">
@@ -338,101 +431,6 @@
             </div>
         </div>
     </div>
-
-</div>
-
-<!-- ═══════════════════════════════════════════════════════════════
-     PAGE 2: ORDER FLOW
-════════════════════════════════════════════════════════════════ -->
-<div class="page" id="liveTab">
-    <div style="display:flex; margin-bottom:12px;">
-        <div id="timeframeBiasBadge" style="flex:1; padding:12px; border-radius:8px; background:var(--s2); border:1px solid var(--border); display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:1rem; letter-spacing:0.5px;">
-            ⏳ Loading Timeframe Bias...
-        </div>
-    </div>
-    <div id="sigBanner" class="sig-banner">
-        <div class="sig-tag" id="sigTag">—</div>
-        <div class="sig-body">
-            <div class="sig-lbl">Market Signal</div>
-            <div class="sig-text" id="sigReason">Loading...</div>
-            <div class="sig-pts" id="sigPts"></div>
-            <div class="lvls" id="sigLvls"></div>
-        </div>
-    </div>
-    <div class="grid2" style="margin-bottom:16px;">
-        <div class="card">
-            <div class="card-hdr"><span class="card-icon">💰</span><span class="card-title">Bid Walls (Buy Support)</span><span class="badge bd-buy">BUY SIDE</span></div>
-            <div class="card-body" id="bidWalls"><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>
-        </div>
-        <div class="card">
-            <div class="card-hdr"><span class="card-icon">🏔️</span><span class="card-title">Ask Walls (Sell Resistance)</span><span class="badge bd-sell">SELL SIDE</span></div>
-            <div class="card-body" id="askWalls"><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>
-        </div>
-    </div>
-    <div class="card" style="margin-bottom:16px;">
-        <div class="card-hdr"><span class="card-icon">📊</span><span class="card-title">Volume Profile (Price Levels)</span><span class="badge bd-blue">TOP 10</span></div>
-        <div class="card-body" id="volProfile"><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>
-    </div>
-    <div class="grid2">
-        <div class="card">
-            <div class="card-hdr"><span class="card-icon">🐋</span><span class="card-title">Large Trades (Whale Activity)</span><span class="badge bd-purple">WHALE</span></div>
-            <div class="card-body" id="whaleList"><div class="sk"></div><div class="sk"></div></div>
-        </div>
-        <div class="card">
-            <div class="card-hdr"><span class="card-icon">⚡</span><span class="card-title">Recent Liquidations</span><span class="badge bd-warn">LIQD</span></div>
-            <div class="card-body" id="liqdList"><div class="sk"></div><div class="sk"></div></div>
-        </div>
-    </div>
-
-    <!-- REAL-TIME WHALE TRACKER -->
-    <div class="card" style="margin-top:16px;">
-        <div class="card-hdr" style="flex-wrap:wrap;gap:8px;">
-            <span class="card-icon">🐳</span>
-            <span class="card-title">Real-Time Whale Tracker</span>
-            <span class="badge" style="background:rgba(0,229,255,.15);color:var(--cyan);border:1px solid var(--cyan);" id="whaleLiveTag">● LIVE</span>
-            <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
-                <span style="font-size:.75rem;color:var(--muted);">Min $</span>
-                <select id="whaleThreshold" onchange="updateWhaleThreshold()" style="padding:4px 8px;background:var(--s2);color:var(--text);border:1px solid var(--border);border-radius:6px;font-size:.78rem;">
-                    <option value="10000">10K</option>
-                    <option value="50000" selected>50K</option>
-                    <option value="100000">100K</option>
-                    <option value="500000">500K</option>
-                    <option value="1000000">1M</option>
-                </select>
-            </div>
-        </div>
-        <div class="card-body" style="padding:0;">
-            <!-- Pressure Bar -->
-            <div style="padding:12px 14px 8px;">
-                <div style="display:flex;justify-content:space-between;font-size:.75rem;margin-bottom:4px;">
-                    <span style="color:var(--buy);font-weight:700;" id="whaleBuyPct">BUY 50%</span>
-                    <span style="color:var(--muted);">Whale Pressure</span>
-                    <span style="color:var(--sell);font-weight:700;" id="whaleSellPct">SELL 50%</span>
-                </div>
-                <div style="background:var(--s2);border-radius:4px;height:8px;overflow:hidden;">
-                    <div id="whalePressureBar" style="background:linear-gradient(90deg,var(--buy),var(--sell));width:50%;height:8px;border-radius:4px;transition:width .5s;"></div>
-                </div>
-                <div style="display:flex;justify-content:space-between;font-size:.72rem;margin-top:4px;color:var(--muted);">
-                    <span>Total Buy: <strong id="whaleTotalBuy" style="color:var(--buy);">$0</strong></span>
-                    <span>Total Sell: <strong id="whaleTotalSell" style="color:var(--sell);">$0</strong></span>
-                </div>
-            </div>
-            <!-- Live Feed -->
-            <div id="whaleFeed" style="max-height:300px;overflow-y:auto;border-top:1px solid var(--border);">
-                <div style="padding:20px;text-align:center;color:var(--muted);font-size:.82rem;">🔌 Connecting to Binance trade stream...</div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- ═══════════════════════════════════════════════════════════════
-     PAGE: FUNDAMENTALS
-════════════════════════════════════════════════════════════════ -->
-<div class="page" id="fundamentalsTab">
-
-
-
-
 
 </div>
 
@@ -1422,7 +1420,7 @@ function startRadarLoop() {
     fetchAndRenderLiquidityRadar();
     if(radarInterval) clearInterval(radarInterval);
     radarInterval = setInterval(() => {
-        if(document.getElementById('replayTab').classList.contains('active')) {
+        if(document.getElementById('fundamentalsTab').classList.contains('active')) {
             fetchAndRenderLiquidityRadar();
         } else {
             clearInterval(radarInterval);
@@ -1431,6 +1429,8 @@ function startRadarLoop() {
 }
 
 async function fetchFundamentals() {
+    startRadarLoop();
+    fetchDefiLlama();
     fetchTrendingCoins();
     const rawSym = document.getElementById('symbolSelect').value || 'BTCUSDT';
     const base = rawSym.replace('USDT','').toLowerCase();
@@ -2009,7 +2009,6 @@ async function runStratLab(){
         document.getElementById('labStatus').textContent = 'Error';
     }
 }
-
 // ══════════════════════════════════════════════════════════════════
 // LIVE CHART (Lightweight Charts)
 // ══════════════════════════════════════════════════════════════════
@@ -2017,8 +2016,6 @@ let replayChart = null, replaySeries = null;
 let sentimentChart = null, retLongSeries = null, instLongSeries = null;
 
 async function initReplayChart() {
-    startRadarLoop(); // Start deep liquidity loop for this tab
-    fetchDefiLlama(); // Fetch DefiLlama data for this tab
     if(!replayChart) {
         const el = document.getElementById('replayChart');
         replayChart = LightweightCharts.createChart(el, {
