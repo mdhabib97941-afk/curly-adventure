@@ -446,6 +446,46 @@
                     Waiting for data...
                 </div>
             </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- New: Order Authenticity & Spoofing Radar -->
+    <div class="card" style="margin-bottom: 20px;">
+        <div class="card-hdr" style="background:var(--s3); display:flex; justify-content:space-between; align-items:center;">
+            <div>
+                <span class="card-icon">🎭</span>
+                <span class="card-title">Order Authenticity (Real vs Spoofed)</span>
+            </div>
+            <div style="display:flex; gap:4px;" id="spoofToggles">
+                <button class="btn-micro" onclick="renderSpoofStats('5m')" id="btnSpoof5m" style="padding:4px 8px; font-size:0.75rem; background:var(--bg); border-radius:4px; cursor:pointer; color:#fff; border:1px solid var(--border);">5m</button>
+                <button class="btn-micro" onclick="renderSpoofStats('15m')" id="btnSpoof15m" style="padding:4px 8px; font-size:0.75rem; background:var(--blue); border-radius:4px; cursor:pointer; color:#fff; border:1px solid var(--border);">15m</button>
+                <button class="btn-micro" onclick="renderSpoofStats('1h')" id="btnSpoof1h" style="padding:4px 8px; font-size:0.75rem; background:var(--bg); border-radius:4px; cursor:pointer; color:#fff; border:1px solid var(--border);">1h</button>
+            </div>
+        </div>
+        <div class="card-body" style="padding:16px; display:flex; flex-direction:column; gap:16px;" id="spoofStatsContainer">
+            <!-- Buy Walls -->
+            <div>
+                <div style="display:flex; justify-content:space-between; font-size:0.8rem; margin-bottom:4px;">
+                    <span style="color:var(--buy); font-weight:bold;">Buy Walls (Bids)</span>
+                    <span style="color:var(--muted); font-size:0.75rem;" id="spoofBuyText">Loading...</span>
+                </div>
+                <div style="width:100%; height:12px; background:var(--bg); border-radius:6px; overflow:hidden; display:flex;">
+                    <div id="spoofBuyReal" style="height:100%; background:#10b981; width:50%; transition:width 0.3s;" title="Real Orders"></div>
+                    <div id="spoofBuyFake" style="height:100%; background:repeating-linear-gradient(45deg, #064e3b, #064e3b 4px, #10b981 4px, #10b981 8px); width:50%; transition:width 0.3s;" title="Fake/Spoofed Orders"></div>
+                </div>
+            </div>
+            <!-- Sell Walls -->
+            <div>
+                <div style="display:flex; justify-content:space-between; font-size:0.8rem; margin-bottom:4px;">
+                    <span style="color:var(--sell); font-weight:bold;">Sell Walls (Asks)</span>
+                    <span style="color:var(--muted); font-size:0.75rem;" id="spoofSellText">Loading...</span>
+                </div>
+                <div style="width:100%; height:12px; background:var(--bg); border-radius:6px; overflow:hidden; display:flex;">
+                    <div id="spoofSellReal" style="height:100%; background:#ef4444; width:50%; transition:width 0.3s;" title="Real Orders"></div>
+                    <div id="spoofSellFake" style="height:100%; background:repeating-linear-gradient(45deg, #7f1d1d, #7f1d1d 4px, #ef4444 4px, #ef4444 8px); width:50%; transition:width 0.3s;" title="Fake/Spoofed Orders"></div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -950,6 +990,11 @@ async function fetchAndRenderLiquidityRadar() {
                 if(predEl) predEl.innerHTML = `<span style="color:#ef4444">Failed to fetch Market Order data.</span>`;
             }
             
+            if (d.data.spoofStats) {
+                globalSpoofStats = d.data.spoofStats;
+                renderSpoofStats(currentSpoofTf);
+            }
+            
             loader.textContent = 'Live • Updated ' + new Date().toLocaleTimeString();
         } else {
             loader.textContent = 'Awaiting Data...';
@@ -957,6 +1002,46 @@ async function fetchAndRenderLiquidityRadar() {
     } catch(err) {
         console.error(err);
         loader.textContent = 'Error loading radar';
+    }
+}
+
+let globalSpoofStats = null;
+let currentSpoofTf = '15m';
+
+function renderSpoofStats(tf) {
+    if(!globalSpoofStats) return;
+    currentSpoofTf = tf;
+    
+    ['btnSpoof5m', 'btnSpoof15m', 'btnSpoof1h'].forEach(id => {
+        const el = document.getElementById(id);
+        if(el) el.style.background = 'var(--bg)';
+    });
+    const activeBtn = document.getElementById(`btnSpoof${tf}`);
+    if(activeBtn) activeBtn.style.background = 'var(--blue)';
+    
+    const stats = globalSpoofStats[tf];
+    if(!stats) {
+        document.getElementById('spoofBuyText').innerText = 'No Data';
+        document.getElementById('spoofSellText').innerText = 'No Data';
+        return;
+    }
+    
+    const fmt = n => (n/1000000).toFixed(1) + 'M';
+    
+    if(stats.totalBids > 0) {
+        const realPct = (stats.realBids / stats.totalBids) * 100;
+        const fakePct = 100 - realPct;
+        document.getElementById('spoofBuyReal').style.width = `${realPct}%`;
+        document.getElementById('spoofBuyFake').style.width = `${fakePct}%`;
+        document.getElementById('spoofBuyText').innerHTML = `Total: $${fmt(stats.totalBids)} | <span style="color:#10b981">Real: $${fmt(stats.realBids)} (${realPct.toFixed(0)}%)</span> | <span style="color:var(--muted)">Fake: $${fmt(stats.fakeBids)} (${fakePct.toFixed(0)}%)</span>`;
+    }
+    
+    if(stats.totalAsks > 0) {
+        const realPct = (stats.realAsks / stats.totalAsks) * 100;
+        const fakePct = 100 - realPct;
+        document.getElementById('spoofSellReal').style.width = `${realPct}%`;
+        document.getElementById('spoofSellFake').style.width = `${fakePct}%`;
+        document.getElementById('spoofSellText').innerHTML = `Total: $${fmt(stats.totalAsks)} | <span style="color:#ef4444">Real: $${fmt(stats.realAsks)} (${realPct.toFixed(0)}%)</span> | <span style="color:var(--muted)">Fake: $${fmt(stats.fakeAsks)} (${fakePct.toFixed(0)}%)</span>`;
     }
 }
 
