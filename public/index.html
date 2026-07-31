@@ -238,6 +238,86 @@
 
 
 </div>
+    <!-- BTC Deep Liquidity & Delta Radar -->
+    <div class="card" style="margin-bottom: 20px;">
+        <div class="card-hdr" style="background:var(--s2); display:flex; justify-content:space-between;">
+            <div>
+                <span class="card-icon">🎯</span>
+                <span class="card-title">BTC Deep Liquidity & Historical Delta</span>
+            </div>
+            <div id="radarLoading" style="font-size:0.8rem; color:var(--muted);">Fetching BTC Orderbook...</div>
+        </div>
+        <div class="card-body" style="padding:16px;">
+            <div style="display:flex; justify-content:space-between; font-size:0.75rem; color:var(--muted); margin-bottom:8px;">
+                <span style="width:100px;">Price Range</span>
+                <span style="flex:1; text-align:center;">Anti-Spoof Real Liquidity (5m Avg)</span>
+                <span style="width:120px; text-align:right;">Delta (Last 15m)</span>
+            </div>
+            <div id="radarContainer" style="display:flex; flex-direction:column; gap:12px;">
+                <!-- Dynamically populated -->
+            </div>
+            
+            <div style="margin-top:20px; padding:12px; background:var(--bg); border:1px dashed var(--border); border-radius:8px; display:flex; justify-content:space-between; align-items:center;">
+                <div style="font-size:0.85rem;">
+                    <strong style="color:var(--cyan);">Whale Accumulation Tracker:</strong><br>
+                    <span style="color:var(--muted);">Total Liquidity Added/Removed (Last 1 Hour)</span>
+                </div>
+                <div id="whaleDelta1h" style="font-size:1.1rem; font-weight:bold;">-</div>
+            </div>
+            
+            <div style="margin-top:12px; padding:12px; background:var(--panel); border:1px solid var(--border); border-radius:8px; display:flex; flex-direction:column; gap:8px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <div style="font-size:0.85rem;">
+                        <strong style="color:var(--pink);">Market Orders (Execution Truth):</strong><br>
+                        <span style="color:var(--muted);">Cumulative Volume Delta (Last 15m)</span>
+                    </div>
+                    <div id="radarCvd" style="font-size:1.1rem; font-weight:bold;">-</div>
+                </div>
+                <div id="radarPrediction" style="font-size:0.9rem; font-weight:bold; text-align:center; padding:8px; border-radius:6px; background:var(--bg); border:1px solid var(--border);">
+                    Waiting for data...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- New: Order Authenticity & Spoofing Radar -->
+    <div class="card" style="margin-bottom: 20px;">
+        <div class="card-hdr" style="background:var(--s3); display:flex; justify-content:space-between; align-items:center;">
+            <div>
+                <span class="card-icon">🎭</span>
+                <span class="card-title">Order Authenticity (Real vs Spoofed)</span>
+            </div>
+            <div style="display:flex; gap:4px;" id="spoofToggles">
+                <button class="btn-micro" onclick="renderSpoofStats('5m')" id="btnSpoof5m" style="padding:4px 8px; font-size:0.75rem; background:var(--bg); border-radius:4px; cursor:pointer; color:#fff; border:1px solid var(--border);">5m</button>
+                <button class="btn-micro" onclick="renderSpoofStats('15m')" id="btnSpoof15m" style="padding:4px 8px; font-size:0.75rem; background:var(--blue); border-radius:4px; cursor:pointer; color:#fff; border:1px solid var(--border);">15m</button>
+                <button class="btn-micro" onclick="renderSpoofStats('1h')" id="btnSpoof1h" style="padding:4px 8px; font-size:0.75rem; background:var(--bg); border-radius:4px; cursor:pointer; color:#fff; border:1px solid var(--border);">1h</button>
+            </div>
+        </div>
+        <div class="card-body" style="padding:16px; display:flex; flex-direction:column; gap:16px;" id="spoofStatsContainer">
+            <!-- Buy Walls -->
+            <div>
+                <div style="display:flex; justify-content:space-between; font-size:0.8rem; margin-bottom:4px;">
+                    <span style="color:var(--buy); font-weight:bold;">Buy Walls (Bids)</span>
+                    <span style="color:var(--muted); font-size:0.75rem;" id="spoofBuyText">Loading...</span>
+                </div>
+                <div style="width:100%; height:12px; background:var(--bg); border-radius:6px; overflow:hidden; display:flex;">
+                    <div id="spoofBuyReal" style="height:100%; background:#10b981; width:50%; transition:width 0.3s;" title="Real Orders"></div>
+                    <div id="spoofBuyFake" style="height:100%; background:repeating-linear-gradient(45deg, #064e3b, #064e3b 4px, #10b981 4px, #10b981 8px); width:50%; transition:width 0.3s;" title="Fake/Spoofed Orders"></div>
+                </div>
+            </div>
+            <!-- Sell Walls -->
+            <div>
+                <div style="display:flex; justify-content:space-between; font-size:0.8rem; margin-bottom:4px;">
+                    <span style="color:var(--sell); font-weight:bold;">Sell Walls (Asks)</span>
+                    <span style="color:var(--muted); font-size:0.75rem;" id="spoofSellText">Loading...</span>
+                </div>
+                <div style="width:100%; height:12px; background:var(--bg); border-radius:6px; overflow:hidden; display:flex;">
+                    <div id="spoofSellReal" style="height:100%; background:#ef4444; width:50%; transition:width 0.3s;" title="Real Orders"></div>
+                    <div id="spoofSellFake" style="height:100%; background:repeating-linear-gradient(45deg, #7f1d1d, #7f1d1d 4px, #ef4444 4px, #ef4444 8px); width:50%; transition:width 0.3s;" title="Fake/Spoofed Orders"></div>
+                </div>
+            </div>
+        </div>
+    </div>
 
 <!-- ═══════════════════════════════════════════════════════════════
      PAGE 2: ORDER FLOW
@@ -389,86 +469,6 @@
         </div>
     </div>
 
-    <!-- BTC Deep Liquidity & Delta Radar -->
-    <div class="card" style="margin-bottom: 20px;">
-        <div class="card-hdr" style="background:var(--s2); display:flex; justify-content:space-between;">
-            <div>
-                <span class="card-icon">🎯</span>
-                <span class="card-title">BTC Deep Liquidity & Historical Delta</span>
-            </div>
-            <div id="radarLoading" style="font-size:0.8rem; color:var(--muted);">Fetching BTC Orderbook...</div>
-        </div>
-        <div class="card-body" style="padding:16px;">
-            <div style="display:flex; justify-content:space-between; font-size:0.75rem; color:var(--muted); margin-bottom:8px;">
-                <span style="width:100px;">Price Range</span>
-                <span style="flex:1; text-align:center;">Anti-Spoof Real Liquidity (5m Avg)</span>
-                <span style="width:120px; text-align:right;">Delta (Last 15m)</span>
-            </div>
-            <div id="radarContainer" style="display:flex; flex-direction:column; gap:12px;">
-                <!-- Dynamically populated -->
-            </div>
-            
-            <div style="margin-top:20px; padding:12px; background:var(--bg); border:1px dashed var(--border); border-radius:8px; display:flex; justify-content:space-between; align-items:center;">
-                <div style="font-size:0.85rem;">
-                    <strong style="color:var(--cyan);">Whale Accumulation Tracker:</strong><br>
-                    <span style="color:var(--muted);">Total Liquidity Added/Removed (Last 1 Hour)</span>
-                </div>
-                <div id="whaleDelta1h" style="font-size:1.1rem; font-weight:bold;">-</div>
-            </div>
-            
-            <div style="margin-top:12px; padding:12px; background:var(--panel); border:1px solid var(--border); border-radius:8px; display:flex; flex-direction:column; gap:8px;">
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <div style="font-size:0.85rem;">
-                        <strong style="color:var(--pink);">Market Orders (Execution Truth):</strong><br>
-                        <span style="color:var(--muted);">Cumulative Volume Delta (Last 15m)</span>
-                    </div>
-                    <div id="radarCvd" style="font-size:1.1rem; font-weight:bold;">-</div>
-                </div>
-                <div id="radarPrediction" style="font-size:0.9rem; font-weight:bold; text-align:center; padding:8px; border-radius:6px; background:var(--bg); border:1px solid var(--border);">
-                    Waiting for data...
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- New: Order Authenticity & Spoofing Radar -->
-    <div class="card" style="margin-bottom: 20px;">
-        <div class="card-hdr" style="background:var(--s3); display:flex; justify-content:space-between; align-items:center;">
-            <div>
-                <span class="card-icon">🎭</span>
-                <span class="card-title">Order Authenticity (Real vs Spoofed)</span>
-            </div>
-            <div style="display:flex; gap:4px;" id="spoofToggles">
-                <button class="btn-micro" onclick="renderSpoofStats('5m')" id="btnSpoof5m" style="padding:4px 8px; font-size:0.75rem; background:var(--bg); border-radius:4px; cursor:pointer; color:#fff; border:1px solid var(--border);">5m</button>
-                <button class="btn-micro" onclick="renderSpoofStats('15m')" id="btnSpoof15m" style="padding:4px 8px; font-size:0.75rem; background:var(--blue); border-radius:4px; cursor:pointer; color:#fff; border:1px solid var(--border);">15m</button>
-                <button class="btn-micro" onclick="renderSpoofStats('1h')" id="btnSpoof1h" style="padding:4px 8px; font-size:0.75rem; background:var(--bg); border-radius:4px; cursor:pointer; color:#fff; border:1px solid var(--border);">1h</button>
-            </div>
-        </div>
-        <div class="card-body" style="padding:16px; display:flex; flex-direction:column; gap:16px;" id="spoofStatsContainer">
-            <!-- Buy Walls -->
-            <div>
-                <div style="display:flex; justify-content:space-between; font-size:0.8rem; margin-bottom:4px;">
-                    <span style="color:var(--buy); font-weight:bold;">Buy Walls (Bids)</span>
-                    <span style="color:var(--muted); font-size:0.75rem;" id="spoofBuyText">Loading...</span>
-                </div>
-                <div style="width:100%; height:12px; background:var(--bg); border-radius:6px; overflow:hidden; display:flex;">
-                    <div id="spoofBuyReal" style="height:100%; background:#10b981; width:50%; transition:width 0.3s;" title="Real Orders"></div>
-                    <div id="spoofBuyFake" style="height:100%; background:repeating-linear-gradient(45deg, #064e3b, #064e3b 4px, #10b981 4px, #10b981 8px); width:50%; transition:width 0.3s;" title="Fake/Spoofed Orders"></div>
-                </div>
-            </div>
-            <!-- Sell Walls -->
-            <div>
-                <div style="display:flex; justify-content:space-between; font-size:0.8rem; margin-bottom:4px;">
-                    <span style="color:var(--sell); font-weight:bold;">Sell Walls (Asks)</span>
-                    <span style="color:var(--muted); font-size:0.75rem;" id="spoofSellText">Loading...</span>
-                </div>
-                <div style="width:100%; height:12px; background:var(--bg); border-radius:6px; overflow:hidden; display:flex;">
-                    <div id="spoofSellReal" style="height:100%; background:#ef4444; width:50%; transition:width 0.3s;" title="Real Orders"></div>
-                    <div id="spoofSellFake" style="height:100%; background:repeating-linear-gradient(45deg, #7f1d1d, #7f1d1d 4px, #ef4444 4px, #ef4444 8px); width:50%; transition:width 0.3s;" title="Fake/Spoofed Orders"></div>
-                </div>
-            </div>
-        </div>
-    </div>
     <!-- DefiLlama On-Chain Liquidity -->
     <div class="card" style="margin-bottom: 20px;">
         <div class="card-hdr" style="background:var(--s2); display:flex; justify-content:space-between;">
@@ -1077,7 +1077,10 @@ function switchPage(id, el) {
     document.getElementById(id).classList.add('active');
     el.classList.add('active');
     if(id==='brainTab') loadBrain();
-    if(id==='replayTab') initReplayChart();
+    if(id==='replayTab') {
+        initReplayChart();
+        startRadarLoop();
+    }
     if(id==='liveTab') startLiveDash();
     if(id==='fundamentalsTab') fetchFundamentals();
     if(id==='usdtTab') initUSDTChart();
@@ -1483,7 +1486,7 @@ function startRadarLoop() {
     fetchAndRenderLiquidityRadar();
     if(radarInterval) clearInterval(radarInterval);
     radarInterval = setInterval(() => {
-        if(document.getElementById('fundamentalsTab').classList.contains('active')) {
+        if(document.getElementById('replayTab').classList.contains('active')) {
             fetchAndRenderLiquidityRadar();
         } else {
             clearInterval(radarInterval);
@@ -1492,7 +1495,6 @@ function startRadarLoop() {
 }
 
 async function fetchFundamentals() {
-    startRadarLoop();
     fetchDefiLlama();
     fetchTrendingCoins();
     const rawSym = document.getElementById('symbolSelect').value || 'BTCUSDT';
