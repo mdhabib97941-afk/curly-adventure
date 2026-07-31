@@ -6,6 +6,7 @@
     <title>Alpha Flow | Smart Money Dashboard</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
         :root{
@@ -326,6 +327,68 @@
      PAGE: FUNDAMENTALS
 ════════════════════════════════════════════════════════════════ -->
 <div class="page" id="fundamentalsTab">
+
+    <!-- Coin Identity Banner -->
+    <div id="fundBanner" style="display:flex;align-items:center;gap:16px;padding:16px;background:var(--panel);border-radius:12px;margin-bottom:16px;border:1px solid var(--border);">
+        <img id="fundCoinImg" src="" style="width:48px;height:48px;border-radius:50%;display:none;" />
+        <div>
+            <div style="font-size:1.2rem;font-weight:800;" id="fundCoinName">Select a coin to view fundamentals</div>
+            <div style="font-size:.8rem;color:var(--muted);" id="fundCoinDesc">Loading...</div>
+        </div>
+        <div style="margin-left:auto;text-align:right;">
+            <div style="font-size:1.4rem;font-weight:800;color:var(--cyan);" id="fundPrice">-</div>
+            <div style="font-size:.8rem;" id="fundChange24h">-</div>
+        </div>
+    </div>
+
+    <!-- Market Cap & Supply Row -->
+    <div class="grid2" style="margin-bottom:16px;">
+        <div class="card">
+            <div class="card-hdr"><span class="card-icon">📊</span><span class="card-title">Market Cap & Value</span><span class="badge bd-blue">MARKET</span></div>
+            <div class="card-body" id="fundMarketCard">
+                <div class="sk"></div><div class="sk"></div><div class="sk"></div>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-hdr"><span class="card-icon">🏦</span><span class="card-title">Supply & Demand</span><span class="badge bd-purple">TOKENOMICS</span></div>
+            <div class="card-body" id="fundSupplyCard">
+                <div class="sk"></div><div class="sk"></div><div class="sk"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Social Interest & Retail Sentiment -->
+    <div class="grid2" style="margin-bottom:16px;">
+        <div class="card">
+            <div class="card-hdr"><span class="card-icon">🌐</span><span class="card-title">Retail Interest (Socials)</span><span class="badge bd-buy">SOCIAL</span></div>
+            <div class="card-body" id="fundSocialCard">
+                <div class="sk"></div><div class="sk"></div><div class="sk"></div>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-hdr"><span class="card-icon">📈</span><span class="card-title">Developer Activity</span><span class="badge bd-warn">DEV</span></div>
+            <div class="card-body" id="fundDevCard">
+                <div class="sk"></div><div class="sk"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Wallet Tracker Links -->
+    <div class="card" style="margin-bottom:16px;">
+        <div class="card-hdr"><span class="card-icon">🐋</span><span class="card-title">Top Wallet Holders & On-Chain Tracking</span><span class="badge bd-sell">ON-CHAIN</span></div>
+        <div class="card-body" id="fundWalletCard" style="padding:14px;">
+            <div class="sk"></div>
+        </div>
+    </div>
+
+    <!-- Market Cap History Chart -->
+    <div class="card" style="margin-bottom:20px;">
+        <div class="card-hdr"><span class="card-icon">📉</span><span class="card-title">Market Cap History (30 Days)</span><span class="badge bd-blue">HISTORY</span></div>
+        <div class="card-body" style="padding:14px;">
+            <canvas id="fundMcapChart" style="width:100%;height:120px;"></canvas>
+        </div>
+    </div>
+
     <!-- BTC Deep Liquidity & Delta Radar -->
     <div class="card" style="margin-bottom: 20px;">
         <div class="card-hdr" style="background:var(--s2); display:flex; justify-content:space-between;">
@@ -1654,13 +1717,14 @@ async function fetchFundamentals() {
 
 async function fetchDefiLlama() {
     try {
-        const res = await fetch('https://stablecoins.llama.fi/stablecoins?includePrices=false');
+        const res = await fetch('/api/onchain-liquidity');
         const data = await res.json();
-        let usdt = data.peggedAssets.find(a => a.symbol === 'USDT');
-        let usdc = data.peggedAssets.find(a => a.symbol === 'USDC');
         
-        let usdtSupply = usdt ? usdt.circulating.peggedUSD : 0;
-        let usdcSupply = usdc ? usdc.circulating.peggedUSD : 0;
+        let usdtData = data.usdtData || [];
+        let usdcData = data.usdcData || [];
+        
+        let usdtSupply = usdtData.length > 0 ? usdtData[usdtData.length-1].totalCirculating.peggedUSD : 0;
+        let usdcSupply = usdcData.length > 0 ? usdcData[usdcData.length-1].totalCirculating.peggedUSD : 0;
         
         document.getElementById('llamaUsdt').innerText = '$' + (usdtSupply / 1e9).toFixed(2) + 'B';
         document.getElementById('llamaUsdc').innerText = '$' + (usdcSupply / 1e9).toFixed(2) + 'B';
