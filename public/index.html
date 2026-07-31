@@ -169,15 +169,10 @@
 </header>
 
 <div class="nav-tabs">
-    <div class="nav-tab active" onclick="switchPage('replayTab',this)">📊 Live Chart & Divergence</div>
-    <div class="nav-tab" onclick="switchPage('liveTab',this)">📈 Order Flow</div>
-    <div class="nav-tab" onclick="switchPage('fundamentalsTab',this)">🔍 Fundamentals</div>
-    <div class="nav-tab" onclick="switchPage('usdtTab',this)">⚖️ USDT.D</div>
+    <div class="nav-tab active" onclick="switchPage('replayTab',this)">🪙 Live Chart & Divergence</div>
+    <div class="nav-tab" onclick="switchPage('usdtTab',this)">💵 USDT.D</div>
 </div>
 
-<!-- ═══════════════════════════════════════════════════════════════
-     PAGE 1: LIVE CHART & DIVERGENCE
-════════════════════════════════════════════════════════════════ -->
 <div class="page active" id="replayTab">
 
     <!-- Signal Box -->
@@ -318,6 +313,31 @@
             </div>
         </div>
     </div>
+    <!-- DefiLlama On-Chain Liquidity -->
+    <div class="card" style="margin-bottom: 20px;">
+        <div class="card-hdr" style="background:var(--s2); display:flex; justify-content:space-between;">
+            <div>
+                <span class="card-icon">🦙</span>
+                <span class="card-title">On-Chain Liquidity (DefiLlama)</span>
+            </div>
+            <div id="llamaLoading" style="font-size:0.8rem; color:var(--muted);">Fetching...</div>
+        </div>
+        <div class="card-body" style="padding:16px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                <div style="flex:1;">
+                    <div style="font-size:0.8rem; color:var(--muted);">USDT Supply</div>
+                    <div id="llamaUsdt" style="font-size:1.4rem; font-weight:bold; color:#26a17b;">-</div>
+                </div>
+                <div style="flex:1; text-align:right;">
+                    <div style="font-size:0.8rem; color:var(--muted);">USDC Supply</div>
+                    <div id="llamaUsdc" style="font-size:1.4rem; font-weight:bold; color:#2775ca;">-</div>
+                </div>
+            </div>
+            <div style="background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:10px; font-size:0.85rem; color:var(--muted); text-align:center;">
+                Total Stablecoin Liquidity: <strong id="llamaTotal" style="color:var(--text); font-size:1rem;">-</strong>
+            </div>
+        </div>
+    </div>
 
 </div>
 
@@ -410,31 +430,7 @@
 ════════════════════════════════════════════════════════════════ -->
 <div class="page" id="fundamentalsTab">
 
-    <!-- DefiLlama On-Chain Liquidity -->
-    <div class="card" style="margin-bottom: 20px;">
-        <div class="card-hdr" style="background:var(--s2); display:flex; justify-content:space-between;">
-            <div>
-                <span class="card-icon">🦙</span>
-                <span class="card-title">On-Chain Liquidity (DefiLlama)</span>
-            </div>
-            <div id="llamaLoading" style="font-size:0.8rem; color:var(--muted);">Fetching...</div>
-        </div>
-        <div class="card-body" style="padding:16px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-                <div style="flex:1;">
-                    <div style="font-size:0.8rem; color:var(--muted);">USDT Supply</div>
-                    <div id="llamaUsdt" style="font-size:1.4rem; font-weight:bold; color:#26a17b;">-</div>
-                </div>
-                <div style="flex:1; text-align:right;">
-                    <div style="font-size:0.8rem; color:var(--muted);">USDC Supply</div>
-                    <div id="llamaUsdc" style="font-size:1.4rem; font-weight:bold; color:#2775ca;">-</div>
-                </div>
-            </div>
-            <div style="background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:10px; font-size:0.85rem; color:var(--muted); text-align:center;">
-                Total Stablecoin Liquidity: <strong id="llamaTotal" style="color:var(--text); font-size:1rem;">-</strong>
-            </div>
-        </div>
-    </div>
+
 
 
 
@@ -1435,7 +1431,6 @@ function startRadarLoop() {
 }
 
 async function fetchFundamentals() {
-    fetchDefiLlama();
     fetchTrendingCoins();
     const rawSym = document.getElementById('symbolSelect').value || 'BTCUSDT';
     const base = rawSym.replace('USDT','').toLowerCase();
@@ -2004,6 +1999,7 @@ let sentimentChart = null, retLongSeries = null, instLongSeries = null;
 
 async function initReplayChart() {
     startRadarLoop(); // Start deep liquidity loop for this tab
+    fetchDefiLlama(); // Fetch DefiLlama data for this tab
     if(!replayChart) {
         const el = document.getElementById('replayChart');
         replayChart = LightweightCharts.createChart(el, {
