@@ -467,23 +467,23 @@
             <!-- Buy Walls -->
             <div>
                 <div style="display:flex; justify-content:space-between; font-size:0.8rem; margin-bottom:4px;">
-                    <span style="color:var(--buy); font-weight:bold;">Buy Walls (Bids)</span>
+                    <span style="color:var(--sell); font-weight:bold;">Buy Walls (Bids)</span>
                     <span style="color:var(--muted); font-size:0.75rem;" id="spoofBuyText">Loading...</span>
                 </div>
                 <div style="width:100%; height:12px; background:var(--bg); border-radius:6px; overflow:hidden; display:flex;">
-                    <div id="spoofBuyReal" style="height:100%; background:#10b981; width:50%; transition:width 0.3s;" title="Real Orders"></div>
-                    <div id="spoofBuyFake" style="height:100%; background:repeating-linear-gradient(45deg, #064e3b, #064e3b 4px, #10b981 4px, #10b981 8px); width:50%; transition:width 0.3s;" title="Fake/Spoofed Orders"></div>
+                    <div id="spoofBuyReal" style="height:100%; background:#ef4444; width:50%; transition:width 0.3s;" title="Real Orders"></div>
+                    <div id="spoofBuyFake" style="height:100%; background:repeating-linear-gradient(45deg, #7f1d1d, #7f1d1d 4px, #ef4444 4px, #ef4444 8px); width:50%; transition:width 0.3s;" title="Fake/Spoofed Orders"></div>
                 </div>
             </div>
             <!-- Sell Walls -->
             <div>
                 <div style="display:flex; justify-content:space-between; font-size:0.8rem; margin-bottom:4px;">
-                    <span style="color:var(--sell); font-weight:bold;">Sell Walls (Asks)</span>
+                    <span style="color:var(--buy); font-weight:bold;">Sell Walls (Asks)</span>
                     <span style="color:var(--muted); font-size:0.75rem;" id="spoofSellText">Loading...</span>
                 </div>
                 <div style="width:100%; height:12px; background:var(--bg); border-radius:6px; overflow:hidden; display:flex;">
-                    <div id="spoofSellReal" style="height:100%; background:#ef4444; width:50%; transition:width 0.3s;" title="Real Orders"></div>
-                    <div id="spoofSellFake" style="height:100%; background:repeating-linear-gradient(45deg, #7f1d1d, #7f1d1d 4px, #ef4444 4px, #ef4444 8px); width:50%; transition:width 0.3s;" title="Fake/Spoofed Orders"></div>
+                    <div id="spoofSellReal" style="height:100%; background:#10b981; width:50%; transition:width 0.3s;" title="Real Orders"></div>
+                    <div id="spoofSellFake" style="height:100%; background:repeating-linear-gradient(45deg, #064e3b, #064e3b 4px, #10b981 4px, #10b981 8px); width:50%; transition:width 0.3s;" title="Fake/Spoofed Orders"></div>
                 </div>
             </div>
         </div>
@@ -1033,7 +1033,7 @@ function renderSpoofStats(tf) {
         const fakePct = 100 - realPct;
         document.getElementById('spoofBuyReal').style.width = `${realPct}%`;
         document.getElementById('spoofBuyFake').style.width = `${fakePct}%`;
-        document.getElementById('spoofBuyText').innerHTML = `Total: $${fmt(stats.totalBids)} | <span style="color:#10b981">Real: $${fmt(stats.realBids)} (${realPct.toFixed(0)}%)</span> | <span style="color:var(--muted)">Fake: $${fmt(stats.fakeBids)} (${fakePct.toFixed(0)}%)</span>`;
+        document.getElementById('spoofBuyText').innerHTML = `Total: $${fmt(stats.totalBids)} | <span style="color:#ef4444">Real: $${fmt(stats.realBids)} (${realPct.toFixed(0)}%)</span> | <span style="color:var(--muted)">Fake: $${fmt(stats.fakeBids)} (${fakePct.toFixed(0)}%)</span>`;
     }
     
     if(stats.totalAsks > 0) {
@@ -1041,7 +1041,7 @@ function renderSpoofStats(tf) {
         const fakePct = 100 - realPct;
         document.getElementById('spoofSellReal').style.width = `${realPct}%`;
         document.getElementById('spoofSellFake').style.width = `${fakePct}%`;
-        document.getElementById('spoofSellText').innerHTML = `Total: $${fmt(stats.totalAsks)} | <span style="color:#ef4444">Real: $${fmt(stats.realAsks)} (${realPct.toFixed(0)}%)</span> | <span style="color:var(--muted)">Fake: $${fmt(stats.fakeAsks)} (${fakePct.toFixed(0)}%)</span>`;
+        document.getElementById('spoofSellText').innerHTML = `Total: $${fmt(stats.totalAsks)} | <span style="color:#10b981">Real: $${fmt(stats.realAsks)} (${realPct.toFixed(0)}%)</span> | <span style="color:var(--muted)">Fake: $${fmt(stats.fakeAsks)} (${fakePct.toFixed(0)}%)</span>`;
     }
 }
 
