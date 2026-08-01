@@ -70,14 +70,14 @@ const BASE   = 'https://data-api.binance.vision';
 // Timeframe intervals in milliseconds
 const TF_MS = { '5m': 300000, '15m': 900000, '1h': 3600000, '4h': 14400000, '1d': 86400000 };
 
-// ── DATABASE (SQLite for temporary, MongoDB for persistent) ────────
+// â”€â”€ DATABASE (SQLite for temporary, MongoDB for persistent) â”€â”€â”€â”€â”€â”€â”€â”€
 const db = new sqlite3.Database(path.join(__dirname, 'database.sqlite'));
 
 // --- MongoDB Setup ---
 const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://user:pass@cluster.mongodb.net/alphaflow';
 mongoose.connect(MONGO_URI)
-    .then(() => console.log('✅ Connected to MongoDB (Persistent Storage)'))
-    .catch(err => console.error('❌ MongoDB connection error (Check your MONGO_URI):', err));
+    .then(() => console.log('âœ… Connected to MongoDB (Persistent Storage)'))
+    .catch(err => console.error('âŒ MongoDB connection error (Check your MONGO_URI):', err));
 
 const OrderbookSnapshot = mongoose.model('OrderbookSnapshot', new mongoose.Schema({
     timestamp: { type: Date, default: Date.now },
@@ -164,10 +164,10 @@ const dbRun = (sql,p=[]) => new Promise((res,rej) => db.run(sql,p,function(e){ e
 const dbAll = (sql,p=[]) => new Promise((res,rej) => db.all(sql,p,(e,rows)=>{ e?rej(e):res(rows); }));
 const dbGet = (sql,p=[]) => new Promise((res,rej) => db.get(sql,p,(e,row)=>{ e?rej(e):res(row); }));
 
-// ─── DOWNLOAD STATUS (in-memory) ───────────────────────────────────────────────
+// â”€â”€â”€ DOWNLOAD STATUS (in-memory) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let dlStatus = { running: false, progress: 0, message: 'Not started', log: [] };
 
-// ─── MATH HELPERS ─────────────────────────────────────────────────────────────
+// â”€â”€â”€ MATH HELPERS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function calcVWAP(candlesSubset) {
     if (candlesSubset.length === 0) return 0;
     let sumPV = 0, sumV = 0;
@@ -198,7 +198,7 @@ function calcATR(candles, period=14) {
     return trs.slice(-period).reduce((a,b)=>a+b,0) / Math.min(period, trs.length);
 }
 
-// ─── SMC STRUCTURE DETECTION ───────────────────────────────────────────────────
+// â”€â”€â”€ SMC STRUCTURE DETECTION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function detectSwingsSMC(candles, window=3) {
     const highs=[], lows=[];
     for (let i=window; i<candles.length-window; i++) {
@@ -213,7 +213,7 @@ function detectSwingsSMC(candles, window=3) {
     return {highs, lows};
 }
 
-// Detect BOS: Break of Structure — price closes beyond previous swing
+// Detect BOS: Break of Structure â€” price closes beyond previous swing
 function detectBOS(candles, highs, lows) {
     const events = [];
     for (let i=1; i<candles.length; i++) {
@@ -358,15 +358,15 @@ function evalStrategies(candles, patterns, bosEvents, chochEvents, obsList, fvgL
         const vwapAligned = (isBuy && ctx.trend==='UPTREND') || (!isBuy && ctx.trend==='DOWNTREND');
         const structBreak = isBuy ? afterCandles[0]?.close > sw.open : afterCandles[0]?.close < sw.open;
 
-        // SMC: S7 — BOS + OB Retest + Liquidity Sweep
+        // SMC: S7 â€” BOS + OB Retest + Liquidity Sweep
         const nearBOS = bosEvents.some(b=>Math.abs(b.idx-idx)<=5);
         const nearOB  = obsList.some(o=>Math.abs(o.idx-idx)<=8 && ((isBuy && o.type==='OB_BULL' && sw.low < o.ob_bottom) || (!isBuy && o.type==='OB_BEAR' && sw.high > o.ob_top)));
-        // SMC: S8 — CHoCH + FVG
+        // SMC: S8 â€” CHoCH + FVG
         const nearCHoCH = chochEvents.some(c=>Math.abs(c.idx-idx)<=8);
         const nearFVG   = fvgList.some(f=>Math.abs(f.idx-idx)<=5 && ((isBuy && f.type==='FVG_BULL') || (!isBuy && f.type==='FVG_BEAR')));
-        // SMC: S9 — EQH/EQL sweep
+        // SMC: S9 â€” EQH/EQL sweep
         const nearEQHL  = eqhlList.some(e=>Math.abs(e.idx-idx)<=3);
-        // SMC: S10 — Full SMC (CHoCH + OB + Volume)
+        // SMC: S10 â€” Full SMC (CHoCH + OB + Volume)
         const fullSMC = nearCHoCH && nearOB && isVolSpike;
 
         const outcome = pat.outcome==='UP', win = isBuy?outcome:!outcome, pct = pat.pct_move;
@@ -401,7 +401,7 @@ function evalStrategies(candles, patterns, bosEvents, chochEvents, obsList, fvgL
     return result;
 }
 
-// ─── PATTERN ANALYSIS ─────────────────────────────────────────────────────────
+// â”€â”€â”€ PATTERN ANALYSIS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function detectSwingPoints(candles, window=5) {
     const highs=[], lows=[];
     for (let i=window; i<candles.length-window; i++) {
@@ -467,7 +467,7 @@ async function analyzeAllPatterns() {
     }
 }
 
-// ─── DOWNLOAD ENGINE ───────────────────────────────────────────────────────────
+// â”€â”€â”€ DOWNLOAD ENGINE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function downloadChunk(tf, endTime) {
     const url = endTime
         ? `${BASE}/api/v3/klines?symbol=${SYMBOL}&interval=${tf}&endTime=${endTime}&limit=1000`
@@ -487,7 +487,7 @@ async function downloadChunk(tf, endTime) {
 
 async function runPartDownload(part) {
     if (dlStatus.running) return;
-    dlStatus = {running:true, progress:0, message:`Starting Part ${part} download…`, log:[]};
+    dlStatus = {running:true, progress:0, message:`Starting Part ${part} downloadâ€¦`, log:[]};
     const TFS = ['5m','15m','1h','4h','1d'];
     // Part N: go back N*1000 bars from now for each timeframe
     for (let t=0; t<TFS.length; t++) {
@@ -495,20 +495,20 @@ async function runPartDownload(part) {
         const interval = TF_MS[tf];
         // Part 1 = latest, Part 2 = 1000-2000 bars back, etc.
         const endTime = Date.now() - (part-1) * 1000 * interval;
-        dlStatus.message = `[Part ${part}] Downloading ${tf}…`;
+        dlStatus.message = `[Part ${part}] Downloading ${tf}â€¦`;
         try {
             const r = await downloadChunk(tf, part===1 ? null : endTime);
             const msg = `[Part ${part}] ${tf}: ${r.inserted} new candles saved`;
             dlStatus.log.push(msg);
             dlStatus.message = msg;
         } catch(e) {
-            dlStatus.log.push(`[Part ${part}] ${tf}: Error — ${e.message}`);
+            dlStatus.log.push(`[Part ${part}] ${tf}: Error â€” ${e.message}`);
         }
         dlStatus.progress = Math.round(((t+1)/TFS.length) * 70);
     }
     // Count total
     const total = await dbGet(`SELECT COUNT(*) as c FROM candles WHERE symbol=?`,[SYMBOL]);
-    dlStatus.message = `Running pattern analysis on ${total?.c||0} candles…`;
+    dlStatus.message = `Running pattern analysis on ${total?.c||0} candlesâ€¦`;
     dlStatus.progress = 75;
     await analyzeAllPatterns();
     dlStatus.progress = 100;
@@ -516,7 +516,7 @@ async function runPartDownload(part) {
     dlStatus.running = false;
 }
 
-// 🎯🎯🎯 LIVE ANALYSIS HELPERS 🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯
+// ðŸŽ¯ðŸŽ¯ðŸŽ¯ LIVE ANALYSIS HELPERS ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯
 
 function calculateVolatility(klines) {
     if(!klines || klines.length < 20) return { status: 'Normal', stdDevPct: 0 };
@@ -592,8 +592,8 @@ function generateSignal(cp,swingHighs,swingLows,bids,asks,klines){
     const last3=klines.slice(-3);
     const bouncing=last3[2][4]>last3[1][4]&&last3[1][4]>last3[0][4];
     const dropping=last3[2][4]<last3[1][4]&&last3[1][4]<last3[0][4];
-    if(cp<rL&&sBid&&bouncing){const dist=cp-rL*0.997;return{signal:'BUY',confidence:'HIGH',entry:cp,stop_loss:rL*0.997,take_profit:cp+dist*2,reason:`Sweep below Swing Low $${rL.toFixed(0)}. Institutions grabbed liquidity. Price bouncing. BUY.`,why_buy:[`Swing Low $${rL.toFixed(0)} swept — retail SLs triggered`,`Strong bid wall confirms institutional buying`,`Bouncing — 3 bullish candles`,`Target: $${pH.toFixed(0)}`]};}
-    if(cp>rH&&sAsk&&dropping){const dist=rH*1.003-cp;return{signal:'SELL',confidence:'HIGH',entry:cp,stop_loss:rH*1.003,take_profit:cp-dist*2,reason:`Sweep above Swing High $${rH.toFixed(0)}. Institutions distributed. Price dropping. SELL.`,why_sell:[`Swing High $${rH.toFixed(0)} swept — retail buys triggered`,`Massive ask wall confirms institutional selling`,`Dropping — 3 bearish candles`,`Target: $${pL.toFixed(0)}`]};}
+    if(cp<rL&&sBid&&bouncing){const dist=cp-rL*0.997;return{signal:'BUY',confidence:'HIGH',entry:cp,stop_loss:rL*0.997,take_profit:cp+dist*2,reason:`Sweep below Swing Low $${rL.toFixed(0)}. Institutions grabbed liquidity. Price bouncing. BUY.`,why_buy:[`Swing Low $${rL.toFixed(0)} swept â€” retail SLs triggered`,`Strong bid wall confirms institutional buying`,`Bouncing â€” 3 bullish candles`,`Target: $${pH.toFixed(0)}`]};}
+    if(cp>rH&&sAsk&&dropping){const dist=rH*1.003-cp;return{signal:'SELL',confidence:'HIGH',entry:cp,stop_loss:rH*1.003,take_profit:cp-dist*2,reason:`Sweep above Swing High $${rH.toFixed(0)}. Institutions distributed. Price dropping. SELL.`,why_sell:[`Swing High $${rH.toFixed(0)} swept â€” retail buys triggered`,`Massive ask wall confirms institutional selling`,`Dropping â€” 3 bearish candles`,`Target: $${pL.toFixed(0)}`]};}
     return{signal:'WAIT',confidence:'LOW',entry:null,stop_loss:null,take_profit:null,reason:`No sweep detected. Wait for $${rL.toFixed(0)} sweep (BUY) or $${rH.toFixed(0)} sweep (SELL).`,why_wait:[`No institutional sweep detected yet`,`BUY setup: wait for sweep of $${rL.toFixed(0)}`,`SELL setup: wait for sweep of $${rH.toFixed(0)}`,`Do not trade until institutions move`]};
 }
 function clusterOB(orders,isBid){
@@ -603,9 +603,27 @@ function clusterOB(orders,isBid){
     return clusters.sort((a,b)=>b.volume-a.volume).slice(0,5);
 }
 
-// ─── WEBSOCKET LIVE DATA (No REST API polling - avoids 418 IP ban) ──────────
+// â”€â”€â”€ WEBSOCKET LIVE DATA (No REST API polling - avoids 418 IP ban) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // We use Binance WebSocket streams for real-time data instead of polling REST API
 // This is free, unlimited, and will NOT trigger rate limits or IP bans.
+
+// â”€â”€â”€ LIVE ORDER FLOW & RETAIL TRAP TRACKING (WebSockets) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+let liveOrderFlow = {
+    whaleWallBid: null, // { price, qty }
+    whaleWallAsk: null, // { price, qty }
+    cvd: 0,
+    buyVol: 0,
+    sellVol: 0,
+    currentPrice: null,
+    trapAlert: null, // text alert string
+    stopLossZone: null, // text alert string
+    spoofAlert: null // text alert string
+};
+
+let lastWhaleWallBid = null;
+let lastWhaleWallAsk = null;
+
+let lastTradeId = 0;
 
 let wsDepth = null;
 let wsTrade = null;
@@ -646,9 +664,9 @@ function connectDepthStream(symbol) {
 
             // Spoofing detection
             if (prevBid && !liveOrderFlow.whaleWallBid && liveOrderFlow.currentPrice > prevBid.price) {
-                liveOrderFlow.spoofAlert = `🚨 Fake Buy Wall Pulled: $${prevBid.price}. Possible Dump incoming!`;
+                liveOrderFlow.spoofAlert = `ðŸš¨ Fake Buy Wall Pulled: $${prevBid.price}. Possible Dump incoming!`;
             } else if (prevAsk && !liveOrderFlow.whaleWallAsk && liveOrderFlow.currentPrice < prevAsk.price) {
-                liveOrderFlow.spoofAlert = `🚨 Fake Sell Wall Pulled: $${prevAsk.price}. Possible Pump incoming!`;
+                liveOrderFlow.spoofAlert = `ðŸš¨ Fake Sell Wall Pulled: $${prevAsk.price}. Possible Pump incoming!`;
             }
 
             if (totalBidVol > totalAskVol * 1.5 && bids.length > 0) {
@@ -695,9 +713,9 @@ function connectTradeStream(symbol) {
 
             // Trap detection
             if (liveOrderFlow.cvd < -10 && liveOrderFlow.whaleWallBid && price >= liveOrderFlow.whaleWallBid.price) {
-                liveOrderFlow.trapAlert = `🔴 Retail Trap: Heavy Retail Selling (${Math.abs(liveOrderFlow.cvd).toFixed(2)} BTC), Whale Buy Wall at $${liveOrderFlow.whaleWallBid.price}. Potential PUMP!`;
+                liveOrderFlow.trapAlert = `ðŸ”´ Retail Trap: Heavy Retail Selling (${Math.abs(liveOrderFlow.cvd).toFixed(2)} BTC), Whale Buy Wall at $${liveOrderFlow.whaleWallBid.price}. Potential PUMP!`;
             } else if (liveOrderFlow.cvd > 10 && liveOrderFlow.whaleWallAsk && price <= liveOrderFlow.whaleWallAsk.price) {
-                liveOrderFlow.trapAlert = `🔴 Retail Trap: Heavy Retail Buying (${liveOrderFlow.cvd.toFixed(2)} BTC), Whale Sell Wall at $${liveOrderFlow.whaleWallAsk.price}. Potential DUMP!`;
+                liveOrderFlow.trapAlert = `ðŸ”´ Retail Trap: Heavy Retail Buying (${liveOrderFlow.cvd.toFixed(2)} BTC), Whale Sell Wall at $${liveOrderFlow.whaleWallAsk.price}. Potential DUMP!`;
             } else {
                 liveOrderFlow.trapAlert = 'No traps detected.';
             }
@@ -784,7 +802,7 @@ setInterval(fetchAndStoreBTCDeepLiquidity, 90000);
 // Delay first call by 30s to let startup settle and reduce 418 risk
 setTimeout(fetchAndStoreBTCDeepLiquidity, 30000);
 
-// ─── API ROUTES ───────────────────────────────────────────────────────────────
+// â”€â”€â”€ API ROUTES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 // 0. On-Chain Liquidity Proxy (bypasses adblockers)
 app.get('/api/onchain-liquidity', async (req, res) => {
@@ -912,64 +930,64 @@ app.get('/api/btc-radar', async(req, res) => {
     }
 });
 
-// Internal JARVIS AI Engine (Fallback)
+// Internal JARVIS AI Engine (Fallback) â€” always reads from live WebSocket data
 function generateInternalJarvisAnalysis(data) {
-    const { stats, tf, currentPrice, cvdData, swingHighs, swingLows, instZones, volatility, imbalance } = data;
-    
-    const support = swingLows && swingLows.length > 0 ? swingLows[swingLows.length-1].price.toFixed(2) : 'N/A';
+    const price    = liveOrderFlow.currentPrice || data.currentPrice;
+    const cvdNet   = liveOrderFlow.cvd || (data.cvdData ? data.cvdData.netCvd : 0);
+    const wsBid    = liveOrderFlow.whaleWallBid;
+    const wsAsk    = liveOrderFlow.whaleWallAsk;
+    const wsTrap   = liveOrderFlow.trapAlert;
+    const wsSpoof  = liveOrderFlow.spoofAlert;
+    const wsSLZone = liveOrderFlow.stopLossZone;
+    const { swingHighs, swingLows, volatility, imbalance } = data;
+    const support    = swingLows  && swingLows.length  > 0 ? swingLows[swingLows.length-1].price.toFixed(2)  : 'N/A';
     const resistance = swingHighs && swingHighs.length > 0 ? swingHighs[swingHighs.length-1].price.toFixed(2) : 'N/A';
-    
-    let html = `<strong>[Internal AI]</strong> মার্কেট অ্যানালাইসিস:<br><br>`;
-    
-    // 1. Squeeze / Volatility Logic
+    let html = `<strong>[Internal AI]</strong> ${new Date().toLocaleTimeString()} â€” Live Analysis:<br><br>`;
+    if (price) html += `Current Price: <strong>$${parseFloat(price).toLocaleString()}</strong> | Support: <strong>$${support}</strong> | Resistance: <strong>$${resistance}</strong><br>`;
     if (volatility && volatility.stdDevPct <= 0.15) {
-        html += `মার্কেট এই মুহূর্তে মারাত্মক <strong>Squeeze (Vol: ${volatility.stdDevPct.toFixed(2)}%)</strong> জোনে আছে। লিকুইডিটি বিল্ড আপ হচ্ছে এবং খুব দ্রুত বড় একটি <span style="color:var(--orange)">Spike</span> আসার সম্ভাবনা রয়েছে!<br>`;
+        html += `<span style="color:#f59e0b">Squeeze (${volatility.stdDevPct.toFixed(2)}%)</span> â€” à¦¬à¦¡à¦¼ Spike à¦†à¦¸à¦¾à¦° à¦¸à¦®à§à¦­à¦¾à¦¬à¦¨à¦¾!<br>`;
     } else if (volatility && volatility.stdDevPct > 0.40) {
-        html += `মার্কেটে বর্তমানে <strong>High Volatility</strong> চলছে। প্রাইস খুব দ্রুত মুভ করছে।<br>`;
-    } else {
-        html += `মার্কেটের ভলাটিলিটি এই মুহূর্তে স্বাভাবিক।<br>`;
+        html += `<strong>High Volatility (${volatility.stdDevPct.toFixed(2)}%)</strong> â€” à¦ªà§à¦°à¦¾à¦‡à¦¸ à¦¦à§à¦°à§à¦¤ à¦®à§à¦­ à¦•à¦°à¦›à§‡à¥¤<br>`;
+    } else if (volatility) {
+        html += `Volatility à¦¸à§à¦¬à¦¾à¦­à¦¾à¦¬à¦¿à¦• (${volatility.stdDevPct.toFixed(2)}%)à¥¤<br>`;
     }
-    
-    // 2. Imbalance Logic
+    if (wsBid) html += `ðŸ‹ <span style="color:var(--buy)">Whale Buy Wall: $${wsBid.price.toFixed(2)} (${wsBid.qty.toFixed(2)} BTC)</span><br>`;
+    if (wsAsk) html += `ðŸ‹ <span style="color:var(--sell)">Whale Sell Wall: $${wsAsk.price.toFixed(2)} (${wsAsk.qty.toFixed(2)} BTC)</span><br>`;
+    if (wsSpoof) html += `ðŸš¨ <span style="color:var(--sell)">${wsSpoof}</span><br>`;
     let isBullishBias = false;
     if (imbalance) {
         if (imbalance.bidRatio > 65) {
-            html += `অর্ডার বুকে <span style="color:var(--buy)">Extreme Buy Pressure (${imbalance.bidRatio.toFixed(1)}%)</span> দেখা যাচ্ছে। বড় স্পাইকটি উপরের দিকে যাওয়ার সম্ভাবনাই বেশি।<br>`;
+            html += `Order Book: <span style="color:var(--buy)">Extreme Buy Pressure (${imbalance.bidRatio.toFixed(1)}%)</span> â€” Spike à¦‰à¦ªà¦°à§‡ à¦¯à¦¾à¦“à¦¯à¦¼à¦¾à¦° à¦¸à¦®à§à¦­à¦¾à¦¬à¦¨à¦¾à¥¤<br>`;
             isBullishBias = true;
         } else if (imbalance.askRatio > 65) {
-            html += `অর্ডার বুকে <span style="color:var(--sell)">Extreme Sell Pressure (${imbalance.askRatio.toFixed(1)}%)</span> দেখা যাচ্ছে। মার্কেট ডাম্প করার প্রস্তুতি নিচ্ছে।<br>`;
-            isBullishBias = false;
+            html += `Order Book: <span style="color:var(--sell)">Extreme Sell Pressure (${imbalance.askRatio.toFixed(1)}%)</span> â€” Dump à¦à¦° à¦ªà§à¦°à¦¸à§à¦¤à§à¦¤à¦¿à¥¤<br>`;
         } else {
-            html += `অর্ডার বুক এই মুহূর্তে প্রায় ব্যালেন্সড অবস্থায় আছে।<br>`;
+            html += `Order Book à¦¬à§à¦¯à¦¾à¦²à§‡à¦¨à§à¦¸à¦¡à¥¤<br>`;
         }
     }
-    
-    // 3. CVD Logic
-    let cvdNet = cvdData ? cvdData.netCvd : 0;
     if (cvdNet > 10) {
-        html += `CVD দেখাচ্ছে যে স্পট মার্কেটে প্রচুর <span style="color:var(--buy)">অ্যাগ্রেসিভ বাইং (+${cvdNet.toFixed(2)} BTC)</span> হচ্ছে।<br>`;
+        html += `CVD: <span style="color:var(--buy)">+${cvdNet.toFixed(2)} BTC bought</span> â€” Aggressive buying à¦šà¦²à¦›à§‡à¥¤<br>`;
     } else if (cvdNet < -10) {
-        html += `CVD দেখাচ্ছে যে স্পট মার্কেটে প্রচুর <span style="color:var(--sell)">অ্যাগ্রেসিভ সেলিং (${cvdNet.toFixed(2)} BTC)</span> হচ্ছে।<br>`;
-    }
-    
-    // 4. Trap Logic
-    let trapProb = 20; // base
-    let trapType = "None";
-    
-    if (isBullishBias && cvdNet < 0) {
-        trapProb = 85;
-        trapType = "FAKE PUMP (Bull Trap)";
-        html += `<br>⚠️ <strong>সতর্কতা:</strong> অর্ডার বুকে বাই প্রেশার থাকলেও CVD নেগেটিভ! এটি একটি <span style="color:var(--sell)">${trapType}</span> হতে পারে। রিটেইল ট্রেডারদের ট্র্যাপে ফেলার জন্য ফেইক বাই ওয়াল (Spoofing) ব্যবহার করা হচ্ছে। Trap Probability: <strong>${trapProb}%</strong><br>`;
-    } else if (!isBullishBias && cvdNet > 0) {
-        trapProb = 85;
-        trapType = "FAKE DUMP (Bear Trap)";
-        html += `<br>⚠️ <strong>সতর্কতা:</strong> অর্ডার বুকে সেল প্রেশার থাকলেও CVD পজিটিভ! এটি একটি <span style="color:var(--buy)">${trapType}</span> হতে পারে। প্রাইস সাপোর্ট লেভেল ($${support}) থেকে বাউন্স করতে পারে। Trap Probability: <strong>${trapProb}%</strong><br>`;
+        html += `CVD: <span style="color:var(--sell)">${cvdNet.toFixed(2)} BTC sold</span> â€” Aggressive selling à¦šà¦²à¦›à§‡à¥¤<br>`;
     } else {
-        html += `<br>✅ <strong>দিকনির্দেশনা:</strong> মার্কেটে এই মুহূর্তে কোনো ক্লিয়ার স্পুফিং ট্র্যাপ দেখা যাচ্ছে না। প্রাইস ${isBullishBias ? 'উপরে রেসিস্ট্যান্স' : 'নিচে সাপোর্ট'} লেভেলের দিকে মুভ করতে পারে।<br>`;
+        html += `CVD à¦¨à¦¿à¦°à¦ªà§‡à¦•à§à¦·à¥¤<br>`;
     }
-    
+    let trapProb = 20, trapType = 'None';
+    if (isBullishBias && cvdNet < -5) {
+        trapProb = 85; trapType = 'FAKE PUMP (Bull Trap)';
+        html += `<br>âš ï¸ à¦¬à¦¾à¦‡ à¦ªà§à¦°à§‡à¦¶à¦¾à¦° + Negative CVD = <span style="color:var(--sell)">${trapType}</span>. Trap: <strong>${trapProb}%</strong><br>`;
+    } else if (!isBullishBias && cvdNet > 5) {
+        trapProb = 85; trapType = 'FAKE DUMP (Bear Trap)';
+        html += `<br>âš ï¸ à¦¸à§‡à¦² à¦ªà§à¦°à§‡à¦¶à¦¾à¦° + Positive CVD = <span style="color:var(--buy)">${trapType}</span>. Trap: <strong>${trapProb}%</strong><br>`;
+    } else {
+        html += `<br>âœ… à¦•à§‹à¦¨à§‹ à¦•à§à¦²à¦¿à¦¯à¦¼à¦¾à¦° à¦Ÿà§à¦°à§à¦¯à¦¾à¦ª à¦¨à§‡à¦‡à¥¤ ${wsSLZone || ''}<br>`;
+    }
+    if (wsTrap && !wsTrap.includes('No traps')) {
+        html += `<br>ðŸ”´ Live: <span style="color:var(--sell)">${wsTrap}</span><br>`;
+    }
     return html;
 }
+
 
 app.post('/api/jarvis-ai', async (req, res) => {
     try {
@@ -1003,7 +1021,7 @@ CRITICAL RULES:
 3. DIVERGENCE RULES: If Price is at resistance but CVD is highly negative, it's a FAKE PUMP (Trap). If Price is at support but CVD is positive, it's a FAKE DUMP (Trap).
 4. MULTI-TIMEFRAME ANALYSIS (MTFA): Compare the 15m (micro) spoofing vs 1h/4h (macro) spoofing to detect larger institutional trends.
 5. Provide a "Trap Probability Score" (e.g. Trap Probability: 85%) based on the ratio of Fake walls and CVD divergence.
-6. Reply entirely in Bengali (বাংলা) with a sharp, professional tone.
+6. Reply entirely in Bengali (à¦¬à¦¾à¦‚à¦²à¦¾) with a sharp, professional tone.
 7. Output valid HTML using <strong> and <span style="color:var(--buy)"> for bullish/support or <span style="color:var(--sell)"> for bearish/resistance. No markdown backticks.
 8. Keep it concise (4-5 sentences max).
 
@@ -1095,7 +1113,7 @@ CRITICAL RULES:
 3. DIVERGENCE RULES: If Price goes UP to resistance but CVD is NEGATIVE, it's a FAKE PUMP (Trap). If Price goes DOWN to support but CVD is POSITIVE, it's a FAKE DUMP (Trap).
 4. MULTI-TIMEFRAME ANALYSIS: Compare the 15m (micro) spoofing vs 1h/4h (macro) spoofing to detect larger trends.
 5. Provide a "Trap Probability Score" (e.g. Trap Probability: 85%).
-6. Reply entirely in Bengali (বাংলা).
+6. Reply entirely in Bengali (à¦¬à¦¾à¦‚à¦²à¦¾).
 7. Output valid HTML (e.g. <strong>, <span style="color:var(--buy)">). No markdown backticks.
 
 LIVE MARKET DATA:
@@ -1148,7 +1166,7 @@ Based on this raw live context, answer the user's prompt as a pro order flow tra
             console.log("Falling back to Internal JARVIS Chat Engine...");
             const lastMsg = history && history.length > 0 ? history[history.length - 1].parts[0].text : '';
             const internalHtml = generateInternalJarvisAnalysis(req.body);
-            const chatHtml = `<strong>[Internal AI]</strong> আমি আপনার প্রশ্ন ("${lastMsg}") বুঝতে পেরেছি, কিন্তু API লিমিট শেষ হওয়ায় বিস্তারিত উত্তর দিতে পারছি না। তবে বর্তমান মার্কেটের অবস্থা হলো:<br><br>${internalHtml}`;
+            const chatHtml = `<strong>[Internal AI]</strong> à¦†à¦®à¦¿ à¦†à¦ªà¦¨à¦¾à¦° à¦ªà§à¦°à¦¶à§à¦¨ ("${lastMsg}") à¦¬à§à¦à¦¤à§‡ à¦ªà§‡à¦°à§‡à¦›à¦¿, à¦•à¦¿à¦¨à§à¦¤à§ API à¦²à¦¿à¦®à¦¿à¦Ÿ à¦¶à§‡à¦· à¦¹à¦“à§Ÿà¦¾à§Ÿ à¦¬à¦¿à¦¸à§à¦¤à¦¾à¦°à¦¿à¦¤ à¦‰à¦¤à§à¦¤à¦° à¦¦à¦¿à¦¤à§‡ à¦ªà¦¾à¦°à¦›à¦¿ à¦¨à¦¾à¥¤ à¦¤à¦¬à§‡ à¦¬à¦°à§à¦¤à¦®à¦¾à¦¨ à¦®à¦¾à¦°à§à¦•à§‡à¦Ÿà§‡à¦° à¦…à¦¬à¦¸à§à¦¥à¦¾ à¦¹à¦²à§‹:<br><br>${internalHtml}`;
             res.json({ success: true, text: chatHtml, internal: true });
         }
         
@@ -1156,7 +1174,7 @@ Based on this raw live context, answer the user's prompt as a pro order flow tra
         console.error("JARVIS Chat Error:", err);
         const lastMsg = req.body.history && req.body.history.length > 0 ? req.body.history[req.body.history.length - 1].parts[0].text : '';
         const internalHtml = generateInternalJarvisAnalysis(req.body);
-        const chatHtml = `<strong>[Internal AI]</strong> API Error! তবে বর্তমান মার্কেটের অবস্থা হলো:<br><br>${internalHtml}`;
+        const chatHtml = `<strong>[Internal AI]</strong> API Error! à¦¤à¦¬à§‡ à¦¬à¦°à§à¦¤à¦®à¦¾à¦¨ à¦®à¦¾à¦°à§à¦•à§‡à¦Ÿà§‡à¦° à¦…à¦¬à¦¸à§à¦¥à¦¾ à¦¹à¦²à§‹:<br><br>${internalHtml}`;
         res.json({ success: true, text: chatHtml, internal: true });
     }
 });
@@ -1189,8 +1207,8 @@ app.get('/api/liquidity', async(req,res)=>{
         const ctx = detectContext(formattedCandles, formattedCandles.length - 1);
         
         const rH=swingHighs[swingHighs.length-1]?.price, rL=swingLows[swingLows.length-1]?.price;
-        if(rH&&cp>rH) await dbRun(`INSERT INTO liquidity_history (symbol,type,price,description) VALUES (?,?,?,?)`,[SYMBOL,'BUY_SIDE_SWEEP',cp,`Swept above $${rH.toFixed(0)} — distribution possible.`]);
-        if(rL&&cp<rL) await dbRun(`INSERT INTO liquidity_history (symbol,type,price,description) VALUES (?,?,?,?)`,[SYMBOL,'SELL_SIDE_SWEEP',cp,`Swept below $${rL.toFixed(0)} — accumulation possible.`]);
+        if(rH&&cp>rH) await dbRun(`INSERT INTO liquidity_history (symbol,type,price,description) VALUES (?,?,?,?)`,[SYMBOL,'BUY_SIDE_SWEEP',cp,`Swept above $${rH.toFixed(0)} â€” distribution possible.`]);
+        if(rL&&cp<rL) await dbRun(`INSERT INTO liquidity_history (symbol,type,price,description) VALUES (?,?,?,?)`,[SYMBOL,'SELL_SIDE_SWEEP',cp,`Swept below $${rL.toFixed(0)} â€” accumulation possible.`]);
         if(signal?.signal!=='WAIT'&&signal?.entry) await dbRun(`INSERT INTO signals (symbol,signal,confidence,entry,stop_loss,take_profit,reason) VALUES (?,?,?,?,?,?,?)`,[SYMBOL,signal.signal,signal.confidence,signal.entry,signal.stop_loss,signal.take_profit,signal.reason]);
         const[history,sigHist,obHist]=await Promise.all([
             dbAll(`SELECT * FROM liquidity_history ORDER BY id DESC LIMIT 10`),
@@ -1309,7 +1327,7 @@ app.get('/api/replay/range', async(req,res)=>{
     }catch(e){res.status(500).json({error:e.message});}
 });
 
-// ─── BRAIN TRADING ENGINE (Self-Learning) ─────────────────────────────────
+// â”€â”€â”€ BRAIN TRADING ENGINE (Self-Learning) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function analyzeFailedTrade(trade) {
     // 1. Fetch candles around the trade execution to see WHY it failed
@@ -1436,7 +1454,7 @@ async function runBrainTrader() {
                             VALUES (?, ?, ?, ?, ?, ?, ?, 'OPEN', ?)`,
                             [symbol, tf, strat, ctx, entry, sl, tp, liveTime]);
                     console.log(`[Brain] Opened new paper trade: ${strat} ${isBuy?'LONG':'SHORT'}`);
-                    addBrainLog(`💡 Setup Found: ${strat} (${isBuy?'LONG':'SHORT'}). Opened Paper Trade!`);
+                    addBrainLog(`ðŸ’¡ Setup Found: ${strat} (${isBuy?'LONG':'SHORT'}). Opened Paper Trade!`);
                 } else {
                     addBrainLog("Setup found, but another trade is already OPEN.");
                 }
@@ -1471,23 +1489,6 @@ app.get('/api/brain/insights', (req, res) => {
     });
 });
 
-// ─── LIVE ORDER FLOW & RETAIL TRAP TRACKING (WebSockets) ────────────────────
-let liveOrderFlow = {
-    whaleWallBid: null, // { price, qty }
-    whaleWallAsk: null, // { price, qty }
-    cvd: 0,
-    buyVol: 0,
-    sellVol: 0,
-    currentPrice: null,
-    trapAlert: null, // text alert string
-    stopLossZone: null, // text alert string
-    spoofAlert: null // text alert string
-};
-
-let lastWhaleWallBid = null;
-let lastWhaleWallAsk = null;
-
-let lastTradeId = 0;
 
 async function pollBinanceOrderFlow() {
     try {
@@ -1518,10 +1519,10 @@ async function pollBinanceOrderFlow() {
         
         // Spoofing detection
         if (lastWhaleWallBid && !liveOrderFlow.whaleWallBid && liveOrderFlow.currentPrice > lastWhaleWallBid.price) {
-            liveOrderFlow.spoofAlert = `🚨 Fake Buy Wall Pulled: $${lastWhaleWallBid.price}. Possible Dump incoming!`;
+            liveOrderFlow.spoofAlert = `ðŸš¨ Fake Buy Wall Pulled: $${lastWhaleWallBid.price}. Possible Dump incoming!`;
         }
         if (lastWhaleWallAsk && !liveOrderFlow.whaleWallAsk && liveOrderFlow.currentPrice < lastWhaleWallAsk.price) {
-            liveOrderFlow.spoofAlert = `🚨 Fake Sell Wall Pulled: $${lastWhaleWallAsk.price}. Possible Pump incoming!`;
+            liveOrderFlow.spoofAlert = `ðŸš¨ Fake Sell Wall Pulled: $${lastWhaleWallAsk.price}. Possible Pump incoming!`;
         }
         lastWhaleWallBid = liveOrderFlow.whaleWallBid;
         lastWhaleWallAsk = liveOrderFlow.whaleWallAsk;
@@ -1565,9 +1566,9 @@ async function pollBinanceOrderFlow() {
             
             // Trap Detection
             if (liveOrderFlow.cvd < -10 && liveOrderFlow.whaleWallBid && liveOrderFlow.currentPrice >= liveOrderFlow.whaleWallBid.price) {
-                liveOrderFlow.trapAlert = `🔴 Retail Trap Detected: Heavy Retail Selling (${Math.abs(liveOrderFlow.cvd).toFixed(2)} BTC), but Whale Buy Wall holding at $${liveOrderFlow.whaleWallBid.price}. Potential Reversal UP!`;
+                liveOrderFlow.trapAlert = `ðŸ”´ Retail Trap Detected: Heavy Retail Selling (${Math.abs(liveOrderFlow.cvd).toFixed(2)} BTC), but Whale Buy Wall holding at $${liveOrderFlow.whaleWallBid.price}. Potential Reversal UP!`;
             } else if (liveOrderFlow.cvd > 10 && liveOrderFlow.whaleWallAsk && liveOrderFlow.currentPrice <= liveOrderFlow.whaleWallAsk.price) {
-                liveOrderFlow.trapAlert = `🔴 Retail Trap Detected: Heavy Retail Buying (${liveOrderFlow.cvd.toFixed(2)} BTC), but Whale Sell Wall holding at $${liveOrderFlow.whaleWallAsk.price}. Potential Reversal DOWN!`;
+                liveOrderFlow.trapAlert = `ðŸ”´ Retail Trap Detected: Heavy Retail Buying (${liveOrderFlow.cvd.toFixed(2)} BTC), but Whale Sell Wall holding at $${liveOrderFlow.whaleWallAsk.price}. Potential Reversal DOWN!`;
             } else {
                 liveOrderFlow.trapAlert = "No traps detected.";
             }
