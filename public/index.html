@@ -896,6 +896,52 @@ function renderSpoofStats(tf) {
         document.getElementById('spoofSellFake').style.width = `${fakePct}%`;
         document.getElementById('spoofSellText').innerHTML = `Total: $${fmt(stats.totalAsks)} | <span style="color:#ef4444">Real: $${fmt(stats.realAsks)} (${realPct.toFixed(0)}%)</span> | <span style="color:var(--muted)">Fake: $${fmt(stats.fakeAsks)} (${fakePct.toFixed(0)}%)</span>`;
     }
+    
+    updateJarvisAnalysis(stats, tf);
+}
+
+function updateJarvisAnalysis(stats, tf) {
+    if(!stats) return;
+    const timeEl = document.getElementById('jarvisTime');
+    const outputEl = document.getElementById('jarvisOutput');
+    if(!timeEl || !outputEl) return;
+    
+    timeEl.innerText = `Analysis based on ${tf} data`;
+    
+    // Core Logic
+    let analysis = '';
+    const realBids = stats.realBids;
+    const realAsks = stats.realAsks;
+    const fakeBidsPct = stats.totalBids > 0 ? (stats.fakeBids / stats.totalBids) : 0;
+    const fakeAsksPct = stats.totalAsks > 0 ? (stats.fakeAsks / stats.totalAsks) : 0;
+    
+    let direction = 'NEUTRAL';
+    if(realBids > realAsks * 1.5) direction = 'BULLISH';
+    else if(realAsks > realBids * 1.5) direction = 'BEARISH';
+    
+    if(direction === 'BULLISH') {
+        analysis += `<strong>Market Direction:</strong> <span style="color:var(--buy)">Bullish Potential</span><br>`;
+        analysis += `<strong>Whale Activity:</strong> Strong underlying support found. Real Buy Walls ($${(realBids/1e6).toFixed(1)}M) dominate Real Sell Walls ($${(realAsks/1e6).toFixed(1)}M). Whales are absorbing retail selling pressure.<br>`;
+        if(fakeAsksPct > 0.15) {
+            analysis += `<strong>Trap Detected:</strong> High Fake Sell Walls (${(fakeAsksPct*100).toFixed(0)}%). Whales are scaring retail into selling to accumulate more before a potential pump.`;
+        } else {
+            analysis += `<strong>Outlook:</strong> Expect upward momentum once current retail selling stops. Look for LONG entries at support zones.`;
+        }
+    } else if(direction === 'BEARISH') {
+        analysis += `<strong>Market Direction:</strong> <span style="color:var(--sell)">Bearish Pressure</span><br>`;
+        analysis += `<strong>Whale Activity:</strong> Heavy resistance overhead. Real Sell Walls ($${(realAsks/1e6).toFixed(1)}M) outweigh Real Buy Walls ($${(realBids/1e6).toFixed(1)}M). Whales are suppressing the price.<br>`;
+        if(fakeBidsPct > 0.15) {
+            analysis += `<strong>Trap Detected:</strong> High Fake Buy Walls (${(fakeBidsPct*100).toFixed(0)}%). Whales are creating a false sense of support to trap buyers before a dump.`;
+        } else {
+            analysis += `<strong>Outlook:</strong> Expect downward pressure. Look for SHORT entries at resistance zones.`;
+        }
+    } else {
+        analysis += `<strong>Market Direction:</strong> Neutral / Ranging<br>`;
+        analysis += `<strong>Whale Activity:</strong> Real Buy and Sell walls are balanced. No clear macro manipulation at this timeframe.<br>`;
+        analysis += `<strong>Outlook:</strong> Wait for a clearer trend or a significant spoofing trap to form before taking major positions.`;
+    }
+    
+    outputEl.innerHTML = analysis;
 }
 
 // ── INIT SYMBOL SELECTOR (Custom Dropdown) ────────────────────────
