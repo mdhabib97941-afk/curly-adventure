@@ -733,6 +733,123 @@ app.get('/api/btc-radar', async(req, res) => {
     }
 });
 
+app.post('/api/jarvis-ai', async (req, res) => {
+    try {
+        const apiKey = process.env.GEMINI_API_KEY;
+        if (!apiKey) {
+            return res.status(400).json({ error: "GEMINI_API_KEY environment variable is not set." });
+        }
+        
+        const { stats, tf, currentPrice, cvdData } = req.body;
+        
+        const prompt = `You are JARVIS, an expert algorithmic crypto order flow analyst. 
+Analyze the following live Bitcoin (BTC) order flow and spoofing data. 
+Explain if market makers are trying to trap retail traders, and what the likely market direction is (UP or DOWN or NEUTRAL). 
+Explain it exactly in Bengali (বাংলা). Use a professional yet helpful tone, like you are advising me. 
+Provide the output in valid HTML format using <strong>, <span> with styles (e.g. color:var(--buy) for bullish, color:var(--sell) for bearish), <br>, etc., so it renders nicely in a dashboard. 
+Keep it concise, about 4-6 sentences. Do not use Markdown backticks around the HTML, just output raw HTML.
+
+Live Data Context:
+Timeframe: ${tf}
+Current Price: $${currentPrice}
+Buy Walls (Bids): Total $${(stats.totalBids/1000000).toFixed(1)}M (Real: ${(stats.realBids/1000000).toFixed(1)}M, Fake/Spoofed: ${(stats.fakeBids/1000000).toFixed(1)}M)
+Sell Walls (Asks): Total $${(stats.totalAsks/1000000).toFixed(1)}M (Real: ${(stats.realAsks/1000000).toFixed(1)}M, Fake/Spoofed: ${(stats.fakeAsks/1000000).toFixed(1)}M)
+Net Market Buy/Sell Orders (CVD): ${cvdData ? (cvdData.netCvd > 0 ? '+'+cvdData.netCvd.toFixed(2)+' BTC Bought' : cvdData.netCvd.toFixed(2)+' BTC Sold') : 'N/A'}
+`;
+
+        const models = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-2.0-flash-lite'];
+        let resultHtml = null;
+        
+        for (const model of models) {
+            try {
+                const response = await axios.post(
+                    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+                    { contents: [{ parts: [{ text: prompt }] }] },
+                    { timeout: 8000 }
+                );
+                
+                if (response.data && response.data.candidates && response.data.candidates.length > 0) {
+                    resultHtml = response.data.candidates[0].content.parts[0].text;
+                    break; // Success
+                }
+            } catch (modelErr) {
+                console.warn(`Model ${model} failed:`, modelErr.message);
+                // Continue to next model
+            }
+        }
+        
+        if (resultHtml) {
+            // Clean up any markdown formatting the AI might have accidentally added
+            resultHtml = resultHtml.replace(/\`\`\`html/gi, '').replace(/\`\`\`/g, '').trim();
+            res.json({ success: true, html: resultHtml });
+        } else {
+            res.status(500).json({ error: "All Gemini models failed to generate response." });
+        }
+        
+    } catch(err) {
+        console.error("JARVIS AI Error:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/jarvis-chat', async (req, res) => {
+    try {
+        const apiKey = process.env.GEMINI_API_KEY;
+        if (!apiKey) return res.status(400).json({ error: "GEMINI_API_KEY is not set." });
+        
+        const { history, stats, tf, currentPrice, cvdData } = req.body;
+        
+        const systemPrompt = `You are JARVIS, an expert algorithmic crypto order flow analyst.
+You must always reply in Bengali (বাংলা) in a professional, helpful, and expert trading tone.
+Use valid HTML format using <strong>, <span> with colors (e.g. style="color:var(--buy)" for bullish/good, style="color:var(--sell)" for bearish/bad), <br>, etc., so it renders nicely in a chat bubble.
+Do not use Markdown backticks around the HTML, just output raw HTML.
+Keep your answers concise and directly address the user's question.
+
+CURRENT LIVE MARKET DATA CONTEXT:
+Timeframe: ${tf}
+Current Price: $${currentPrice}
+Buy Walls (Bids): Total $${(stats.totalBids/1000000).toFixed(1)}M (Real: ${(stats.realBids/1000000).toFixed(1)}M, Fake/Spoofed: ${(stats.fakeBids/1000000).toFixed(1)}M)
+Sell Walls (Asks): Total $${(stats.totalAsks/1000000).toFixed(1)}M (Real: ${(stats.realAsks/1000000).toFixed(1)}M, Fake/Spoofed: ${(stats.fakeAsks/1000000).toFixed(1)}M)
+Net Market Orders (CVD): ${cvdData ? (cvdData.netCvd > 0 ? '+'+cvdData.netCvd.toFixed(2)+' BTC Bought' : cvdData.netCvd.toFixed(2)+' BTC Sold') : 'N/A'}
+
+Based on this data, answer the user's question. Identify traps and spoofing if relevant.`;
+
+        const models = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-2.0-flash-lite'];
+        let resultHtml = null;
+        
+        for (const model of models) {
+            try {
+                const response = await axios.post(
+                    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+                    { 
+                        systemInstruction: { parts: [{ text: systemPrompt }] },
+                        contents: history
+                    },
+                    { timeout: 10000 }
+                );
+                
+                if (response.data && response.data.candidates && response.data.candidates.length > 0) {
+                    resultHtml = response.data.candidates[0].content.parts[0].text;
+                    break;
+                }
+            } catch (modelErr) {
+                console.warn(`Chat Model ${model} failed:`, modelErr.message);
+            }
+        }
+        
+        if (resultHtml) {
+            resultHtml = resultHtml.replace(/\`\`\`html/gi, '').replace(/\`\`\`/g, '').trim();
+            res.json({ success: true, text: resultHtml });
+        } else {
+            res.status(500).json({ error: "All AI models failed to respond." });
+        }
+        
+    } catch(err) {
+        console.error("JARVIS Chat Error:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 const liqCache = {};
 app.get('/api/liquidity', async(req,res)=>{
     try{
