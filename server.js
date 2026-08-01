@@ -499,7 +499,45 @@ async function runPartDownload(part) {
     dlStatus.running = false;
 }
 
-// ─── LIVE ANALYSIS HELPERS ─────────────────────────────────────────────────────
+// 🎯🎯🎯 LIVE ANALYSIS HELPERS 🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯🎯
+
+function calculateVolatility(klines) {
+    if(!klines || klines.length < 20) return { status: 'Normal', stdDevPct: 0 };
+    const recent = klines.slice(-20);
+    const closes = recent.map(k => parseFloat(k[4]));
+    const mean = closes.reduce((a,b) => a+b, 0) / closes.length;
+    const squaredDiffs = closes.map(c => Math.pow(c - mean, 2));
+    const variance = squaredDiffs.reduce((a,b) => a+b, 0) / closes.length;
+    const stdDev = Math.sqrt(variance);
+    const stdDevPct = (stdDev / mean) * 100;
+    
+    let status = 'Normal';
+    if(stdDevPct <= 0.15) status = 'Squeeze (Spike Imminent)';
+    else if(stdDevPct > 0.40) status = 'High Volatility';
+    
+    return { status, stdDevPct };
+}
+
+function calculateImbalance(bids, asks) {
+    let totalBids = 0, totalAsks = 0;
+    bids.forEach(b => totalBids += (parseFloat(b[0]) * parseFloat(b[1])));
+    asks.forEach(a => totalAsks += (parseFloat(a[0]) * parseFloat(a[1])));
+    
+    const total = totalBids + totalAsks;
+    if(total === 0) return { bidRatio: 50, askRatio: 50, status: 'Neutral' };
+    
+    const bidRatio = (totalBids / total) * 100;
+    const askRatio = (totalAsks / total) * 100;
+    
+    let status = 'Neutral';
+    if(bidRatio > 65) status = 'Extreme Buy Pressure (Spike UP Likely)';
+    else if(askRatio > 65) status = 'Extreme Sell Pressure (Spike DOWN Likely)';
+    else if(bidRatio > 55) status = 'Bullish Bias';
+    else if(askRatio > 55) status = 'Bearish Bias';
+    
+    return { bidRatio, askRatio, status };
+}
+
 function findSwingPointsLive(klines) {
     const swingHighs=[], swingLows=[];
     const W=5;
@@ -508,7 +546,7 @@ function findSwingPointsLive(klines) {
         let isH=true,isL=true;
         for (let d=1;d<=W;d++){
             if(h<=parseFloat(klines[i-d][2])||h<=parseFloat(klines[i+d][2])) isH=false;
-            if(l>=parseFloat(klines[i-d][3])||l>=parseFloat(klines[i+d][3])) isL=false;
+            if(l>=parseFloat(klines[i-d][3])||l>=parseFloat(klines[i+d][3]))  isL=false;
         }
         if(isH) swingHighs.push({price:h,time:t});
         if(isL) swingLows.push({price:l,time:t});
@@ -733,6 +771,65 @@ app.get('/api/btc-radar', async(req, res) => {
     }
 });
 
+// Internal JARVIS AI Engine (Fallback)
+function generateInternalJarvisAnalysis(data) {
+    const { stats, tf, currentPrice, cvdData, swingHighs, swingLows, instZones, volatility, imbalance } = data;
+    
+    const support = swingLows && swingLows.length > 0 ? swingLows[swingLows.length-1].price.toFixed(2) : 'N/A';
+    const resistance = swingHighs && swingHighs.length > 0 ? swingHighs[swingHighs.length-1].price.toFixed(2) : 'N/A';
+    
+    let html = `<strong>[Internal AI]</strong> মার্কেট অ্যানালাইসিস:<br><br>`;
+    
+    // 1. Squeeze / Volatility Logic
+    if (volatility && volatility.stdDevPct <= 0.15) {
+        html += `মার্কেট এই মুহূর্তে মারাত্মক <strong>Squeeze (Vol: ${volatility.stdDevPct.toFixed(2)}%)</strong> জোনে আছে। লিকুইডিটি বিল্ড আপ হচ্ছে এবং খুব দ্রুত বড় একটি <span style="color:var(--orange)">Spike</span> আসার সম্ভাবনা রয়েছে!<br>`;
+    } else if (volatility && volatility.stdDevPct > 0.40) {
+        html += `মার্কেটে বর্তমানে <strong>High Volatility</strong> চলছে। প্রাইস খুব দ্রুত মুভ করছে।<br>`;
+    } else {
+        html += `মার্কেটের ভলাটিলিটি এই মুহূর্তে স্বাভাবিক।<br>`;
+    }
+    
+    // 2. Imbalance Logic
+    let isBullishBias = false;
+    if (imbalance) {
+        if (imbalance.bidRatio > 65) {
+            html += `অর্ডার বুকে <span style="color:var(--buy)">Extreme Buy Pressure (${imbalance.bidRatio.toFixed(1)}%)</span> দেখা যাচ্ছে। বড় স্পাইকটি উপরের দিকে যাওয়ার সম্ভাবনাই বেশি।<br>`;
+            isBullishBias = true;
+        } else if (imbalance.askRatio > 65) {
+            html += `অর্ডার বুকে <span style="color:var(--sell)">Extreme Sell Pressure (${imbalance.askRatio.toFixed(1)}%)</span> দেখা যাচ্ছে। মার্কেট ডাম্প করার প্রস্তুতি নিচ্ছে।<br>`;
+            isBullishBias = false;
+        } else {
+            html += `অর্ডার বুক এই মুহূর্তে প্রায় ব্যালেন্সড অবস্থায় আছে।<br>`;
+        }
+    }
+    
+    // 3. CVD Logic
+    let cvdNet = cvdData ? cvdData.netCvd : 0;
+    if (cvdNet > 10) {
+        html += `CVD দেখাচ্ছে যে স্পট মার্কেটে প্রচুর <span style="color:var(--buy)">অ্যাগ্রেসিভ বাইং (+${cvdNet.toFixed(2)} BTC)</span> হচ্ছে।<br>`;
+    } else if (cvdNet < -10) {
+        html += `CVD দেখাচ্ছে যে স্পট মার্কেটে প্রচুর <span style="color:var(--sell)">অ্যাগ্রেসিভ সেলিং (${cvdNet.toFixed(2)} BTC)</span> হচ্ছে।<br>`;
+    }
+    
+    // 4. Trap Logic
+    let trapProb = 20; // base
+    let trapType = "None";
+    
+    if (isBullishBias && cvdNet < 0) {
+        trapProb = 85;
+        trapType = "FAKE PUMP (Bull Trap)";
+        html += `<br>⚠️ <strong>সতর্কতা:</strong> অর্ডার বুকে বাই প্রেশার থাকলেও CVD নেগেটিভ! এটি একটি <span style="color:var(--sell)">${trapType}</span> হতে পারে। রিটেইল ট্রেডারদের ট্র্যাপে ফেলার জন্য ফেইক বাই ওয়াল (Spoofing) ব্যবহার করা হচ্ছে। Trap Probability: <strong>${trapProb}%</strong><br>`;
+    } else if (!isBullishBias && cvdNet > 0) {
+        trapProb = 85;
+        trapType = "FAKE DUMP (Bear Trap)";
+        html += `<br>⚠️ <strong>সতর্কতা:</strong> অর্ডার বুকে সেল প্রেশার থাকলেও CVD পজিটিভ! এটি একটি <span style="color:var(--buy)">${trapType}</span> হতে পারে। প্রাইস সাপোর্ট লেভেল ($${support}) থেকে বাউন্স করতে পারে। Trap Probability: <strong>${trapProb}%</strong><br>`;
+    } else {
+        html += `<br>✅ <strong>দিকনির্দেশনা:</strong> মার্কেটে এই মুহূর্তে কোনো ক্লিয়ার স্পুফিং ট্র্যাপ দেখা যাচ্ছে না। প্রাইস ${isBullishBias ? 'উপরে রেসিস্ট্যান্স' : 'নিচে সাপোর্ট'} লেভেলের দিকে মুভ করতে পারে।<br>`;
+    }
+    
+    return html;
+}
+
 app.post('/api/jarvis-ai', async (req, res) => {
     try {
         const apiKey = process.env.GEMINI_API_KEY;
@@ -740,7 +837,7 @@ app.post('/api/jarvis-ai', async (req, res) => {
             return res.status(400).json({ error: "GEMINI_API_KEY environment variable is not set." });
         }
         
-        const { stats, tf, currentPrice, cvdData, swingHighs, swingLows, instZones, signal } = req.body;
+        const { stats, tf, currentPrice, cvdData, swingHighs, swingLows, instZones, signal, volatility, imbalance } = req.body;
         
         const support = swingLows && swingLows.length > 0 ? swingLows[swingLows.length-1].price.toFixed(2) : 'N/A';
         const resistance = swingHighs && swingHighs.length > 0 ? swingHighs[swingHighs.length-1].price.toFixed(2) : 'N/A';
@@ -771,6 +868,8 @@ CRITICAL RULES:
 
 LIVE MARKET DATA:
 Timeframe Focus: ${tf} | Current Price: $${currentPrice}
+Volatility Status: ${volatility ? volatility.status + ' (' + volatility.stdDevPct.toFixed(2) + '%)' : 'N/A'}
+Order Book Imbalance: ${imbalance ? imbalance.status + ' (Bids: ' + imbalance.bidRatio.toFixed(1) + '%, Asks: ' + imbalance.askRatio.toFixed(1) + '%)' : 'N/A'}
 Immediate Resistance: $${resistance} | Immediate Support: $${support}
 Institutional Liquidity Pools: ${liqPools}
 CVD (Net Orders): ${cvdData ? (cvdData.netCvd > 0 ? '+'+cvdData.netCvd.toFixed(2)+' BTC Bought' : cvdData.netCvd.toFixed(2)+' BTC Sold') : 'N/A'}
@@ -778,7 +877,7 @@ CVD (Net Orders): ${cvdData ? (cvdData.netCvd > 0 ? '+'+cvdData.netCvd.toFixed(2
 MULTI-TIMEFRAME SPOOFING DATA:
 ${formatSpoofStats(stats)}
 
-Based on this raw data, identify if there is a spoofing trap, calculate the Trap Probability Score, and give a clear directional bias.`;
+Based on this raw data, identify if there is a spoofing trap, if a volatility spike is coming (based on Squeeze), calculate the Trap Probability Score, and give a clear directional bias.`;
 
         const models = [
             'gemini-2.5-flash',
@@ -813,12 +912,15 @@ Based on this raw data, identify if there is a spoofing trap, calculate the Trap
             resultHtml = resultHtml.replace(/\`\`\`html/gi, '').replace(/\`\`\`/g, '').trim();
             res.json({ success: true, html: resultHtml });
         } else {
-            res.status(500).json({ error: "All Gemini models failed to generate response." });
+            console.log("Falling back to Internal JARVIS Engine...");
+            const internalHtml = generateInternalJarvisAnalysis(req.body);
+            res.json({ success: true, html: internalHtml, internal: true });
         }
         
     } catch(err) {
         console.error("JARVIS AI Error:", err);
-        res.status(500).json({ error: err.message });
+        const internalHtml = generateInternalJarvisAnalysis(req.body);
+        res.json({ success: true, html: internalHtml, internal: true });
     }
 });
 
@@ -827,7 +929,7 @@ app.post('/api/jarvis-chat', async (req, res) => {
         const apiKey = process.env.GEMINI_API_KEY;
         if (!apiKey) return res.status(400).json({ error: "GEMINI_API_KEY is not set." });
         
-        const { history, stats, tf, currentPrice, cvdData, swingHighs, swingLows, instZones, signal } = req.body;
+        const { history, stats, tf, currentPrice, cvdData, swingHighs, swingLows, instZones, signal, volatility, imbalance } = req.body;
         
         const support = swingLows && swingLows.length > 0 ? swingLows[swingLows.length-1].price.toFixed(2) : 'N/A';
         const resistance = swingHighs && swingHighs.length > 0 ? swingHighs[swingHighs.length-1].price.toFixed(2) : 'N/A';
@@ -857,6 +959,8 @@ CRITICAL RULES:
 
 LIVE MARKET DATA:
 Timeframe Focus: ${tf} | Price: $${currentPrice}
+Volatility Status: ${volatility ? volatility.status + ' (' + volatility.stdDevPct.toFixed(2) + '%)' : 'N/A'}
+Order Book Imbalance: ${imbalance ? imbalance.status + ' (Bids: ' + imbalance.bidRatio.toFixed(1) + '%, Asks: ' + imbalance.askRatio.toFixed(1) + '%)' : 'N/A'}
 Support: $${support} | Resistance: $${resistance}
 Liquidity Pools: ${liqPools}
 CVD (Net Orders): ${cvdData ? (cvdData.netCvd > 0 ? '+'+cvdData.netCvd.toFixed(2)+' BTC Bought' : cvdData.netCvd.toFixed(2)+' BTC Sold') : 'N/A'}
@@ -864,7 +968,7 @@ CVD (Net Orders): ${cvdData ? (cvdData.netCvd > 0 ? '+'+cvdData.netCvd.toFixed(2
 MULTI-TIMEFRAME SPOOFING DATA:
 ${formatSpoofStats(stats)}
 
-Based on this raw live context, answer the user's prompt as a pro order flow trader.`;
+Based on this raw live context, answer the user's prompt as a pro order flow trader. Tell them if a spike is imminent based on volatility.`;
 
         const models = [
             'gemini-2.5-flash',
@@ -900,12 +1004,19 @@ Based on this raw live context, answer the user's prompt as a pro order flow tra
             resultHtml = resultHtml.replace(/\`\`\`html/gi, '').replace(/\`\`\`/g, '').trim();
             res.json({ success: true, text: resultHtml });
         } else {
-            res.status(500).json({ error: "All AI models failed to respond." });
+            console.log("Falling back to Internal JARVIS Chat Engine...");
+            const lastMsg = history && history.length > 0 ? history[history.length - 1].parts[0].text : '';
+            const internalHtml = generateInternalJarvisAnalysis(req.body);
+            const chatHtml = `<strong>[Internal AI]</strong> আমি আপনার প্রশ্ন ("${lastMsg}") বুঝতে পেরেছি, কিন্তু API লিমিট শেষ হওয়ায় বিস্তারিত উত্তর দিতে পারছি না। তবে বর্তমান মার্কেটের অবস্থা হলো:<br><br>${internalHtml}`;
+            res.json({ success: true, text: chatHtml, internal: true });
         }
         
     } catch(err) {
         console.error("JARVIS Chat Error:", err);
-        res.status(500).json({ error: err.message });
+        const lastMsg = req.body.history && req.body.history.length > 0 ? req.body.history[req.body.history.length - 1].parts[0].text : '';
+        const internalHtml = generateInternalJarvisAnalysis(req.body);
+        const chatHtml = `<strong>[Internal AI]</strong> API Error! তবে বর্তমান মার্কেটের অবস্থা হলো:<br><br>${internalHtml}`;
+        res.json({ success: true, text: chatHtml, internal: true });
     }
 });
 
@@ -927,6 +1038,8 @@ app.get('/api/liquidity', async(req,res)=>{
         const instZones=findInstZones(klines);
         const signal=generateSignal(cp,swingHighs,swingLows,bids,asks,klines);
         const topAsks=clusterOB(asks,false), topBids=clusterOB(bids,true);
+        const volatility = calculateVolatility(klines);
+        const imbalance = calculateImbalance(bids, asks);
         
         // Calculate Timeframe Bias using detectContext
         const formattedCandles = klines.map(k => ({
@@ -945,7 +1058,10 @@ app.get('/api/liquidity', async(req,res)=>{
         ]);
         const responseData = {status:'success',symbol:SYMBOL,timeframe:tf,current_price:cp,signal,
             chart_liquidity:{swing_highs:swingHighs,swing_lows:swingLows},institutional_zones:instZones,
-            order_book_liquidity:{asks:topAsks,bids:topBids},history,signal_history:sigHist,ob_history:obHist, timeframe_bias: ctx};
+            order_book_liquidity:{asks:topAsks,bids:topBids},history,signal_history:sigHist,ob_history:obHist, timeframe_bias: ctx,
+            volatility: volatility,
+            imbalance: imbalance
+        };
         liqCache[tf] = { time: now, data: responseData };
         res.json(responseData);
     }catch(e){res.status(500).json({error:e.message});}
