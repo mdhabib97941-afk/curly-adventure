@@ -422,9 +422,20 @@
             </div>
             <div style="font-size:0.75rem; color:var(--muted);" id="jarvisTime">Waiting for data...</div>
         </div>
-        <div class="card-body" style="padding:16px; line-height:1.5;">
+        <div class="card-body" style="padding:16px; line-height:1.5; border-bottom: 1px solid var(--border);">
             <div id="jarvisOutput" style="font-size:0.95rem; color:var(--text);">
                 Initialize system to begin AI analysis...
+            </div>
+        </div>
+        
+        <!-- Chat Interface -->
+        <div style="padding:16px; display:flex; flex-direction:column; gap:12px; background: rgba(0, 0, 0, 0.2);">
+            <div id="jarvisChatHistory" style="max-height: 250px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding-right: 5px;">
+                <!-- Chat Messages -->
+            </div>
+            <div style="display:flex; gap:8px;">
+                <input type="text" id="jarvisChatInput" placeholder="Ask J.A.R.V.I.S anything in Bengali..." style="flex:1; padding:10px 12px; border-radius:6px; border:1px solid var(--border); background:var(--bg); color:var(--text); outline:none;" onkeypress="if(event.key === 'Enter') sendJarvisChat()">
+                <button onclick="sendJarvisChat()" style="padding:10px 16px; border-radius:6px; background:var(--blue); color:#fff; border:none; font-weight:bold; cursor:pointer;">Send</button>
             </div>
         </div>
     </div>
@@ -861,6 +872,8 @@ async function fetchAndRenderLiquidityRadar() {
             
             if (d.data.spoofStats) {
                 globalSpoofStats = d.data.spoofStats;
+                globalCvdData = d.data.cvdData;
+                globalCurrentPrice = currentPrice;
                 renderSpoofStats(currentSpoofTf);
             }
             
@@ -876,6 +889,8 @@ async function fetchAndRenderLiquidityRadar() {
 
 let globalSpoofStats = null;
 let currentSpoofTf = '15m';
+let globalCvdData = null;
+let globalCurrentPrice = 0;
 
 function renderSpoofStats(tf) {
     if(!globalSpoofStats) return;
@@ -916,48 +931,114 @@ function renderSpoofStats(tf) {
     updateJarvisAnalysis(stats, tf);
 }
 
-function updateJarvisAnalysis(stats, tf) {
+let lastJarvisFetchTime = 0;
+async function updateJarvisAnalysis(stats, tf) {
     if(!stats) return;
     const timeEl = document.getElementById('jarvisTime');
     const outputEl = document.getElementById('jarvisOutput');
     if(!timeEl || !outputEl) return;
     
-    timeEl.innerText = `Analysis based on ${tf} data`;
-    
-    // Core Logic
-    let analysis = '';
-    const realBids = stats.realBids;
-    const realAsks = stats.realAsks;
-    const fakeBidsPct = stats.totalBids > 0 ? (stats.fakeBids / stats.totalBids) : 0;
-    const fakeAsksPct = stats.totalAsks > 0 ? (stats.fakeAsks / stats.totalAsks) : 0;
-    
-    let direction = 'NEUTRAL';
-    if(realBids > realAsks * 1.5) direction = 'BULLISH';
-    else if(realAsks > realBids * 1.5) direction = 'BEARISH';
-    
-    if(direction === 'BULLISH') {
-        analysis += `<strong>Market Direction:</strong> <span style="color:var(--buy)">Bullish Potential</span><br>`;
-        analysis += `<strong>Whale Activity:</strong> Strong underlying support found. Real Buy Walls ($${(realBids/1e6).toFixed(1)}M) dominate Real Sell Walls ($${(realAsks/1e6).toFixed(1)}M). Whales are absorbing retail selling pressure.<br>`;
-        if(fakeAsksPct > 0.15) {
-            analysis += `<strong>Trap Detected:</strong> High Fake Sell Walls (${(fakeAsksPct*100).toFixed(0)}%). Whales are scaring retail into selling to accumulate more before a potential pump.`;
-        } else {
-            analysis += `<strong>Outlook:</strong> Expect upward momentum once current retail selling stops. Look for LONG entries at support zones.`;
-        }
-    } else if(direction === 'BEARISH') {
-        analysis += `<strong>Market Direction:</strong> <span style="color:var(--sell)">Bearish Pressure</span><br>`;
-        analysis += `<strong>Whale Activity:</strong> Heavy resistance overhead. Real Sell Walls ($${(realAsks/1e6).toFixed(1)}M) outweigh Real Buy Walls ($${(realBids/1e6).toFixed(1)}M). Whales are suppressing the price.<br>`;
-        if(fakeBidsPct > 0.15) {
-            analysis += `<strong>Trap Detected:</strong> High Fake Buy Walls (${(fakeBidsPct*100).toFixed(0)}%). Whales are creating a false sense of support to trap buyers before a dump.`;
-        } else {
-            analysis += `<strong>Outlook:</strong> Expect downward pressure. Look for SHORT entries at resistance zones.`;
-        }
-    } else {
-        analysis += `<strong>Market Direction:</strong> Neutral / Ranging<br>`;
-        analysis += `<strong>Whale Activity:</strong> Real Buy and Sell walls are balanced. No clear macro manipulation at this timeframe.<br>`;
-        analysis += `<strong>Outlook:</strong> Wait for a clearer trend or a significant spoofing trap to form before taking major positions.`;
+    // Only call Gemini API max once every 2 minutes to prevent rate limits
+    if (Date.now() - lastJarvisFetchTime < 120000 && outputEl.innerHTML.trim() !== '') {
+        return; 
     }
     
-    outputEl.innerHTML = analysis;
+    timeEl.innerText = `AI Analysis based on live ${tf} data...`;
+    
+    // Loading State
+    outputEl.innerHTML = `<div style="display: flex; align-items: center; gap: 10px; padding: 10px 0;">
+        <div class="sk" style="width: 20px; height: 20px; border-radius: 50%; min-width: 20px;"></div>
+        <span style="color: var(--text-muted); font-size: 0.9rem;">J.A.R.V.I.S is deeply analyzing the order flow to find traps...</span>
+    </div>`;
+    
+    try {
+        const res = await fetch('/api/jarvis-ai', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                stats: stats, 
+                tf: tf, 
+                currentPrice: globalCurrentPrice, 
+                cvdData: globalCvdData 
+            })
+        });
+        
+        const data = await res.json();
+        
+        if (data.success) {
+            outputEl.innerHTML = data.html;
+            timeEl.innerText = `Analysis updated (${new Date().toLocaleTimeString()})`;
+            lastJarvisFetchTime = Date.now();
+        } else {
+            outputEl.innerHTML = `<span style="color:var(--sell)">AI Error: ${data.error}</span>`;
+            timeEl.innerText = `Analysis failed`;
+        }
+    } catch(err) {
+        outputEl.innerHTML = `<span style="color:var(--sell)">Failed to connect to J.A.R.V.I.S server.</span>`;
+        timeEl.innerText = `Analysis failed`;
+        console.error(err);
+    }
+}
+
+let jarvisChatHistory = [];
+async function sendJarvisChat() {
+    const inputEl = document.getElementById('jarvisChatInput');
+    const msg = inputEl.value.trim();
+    if(!msg) return;
+    
+    inputEl.value = '';
+    
+    const chatContainer = document.getElementById('jarvisChatHistory');
+    chatContainer.innerHTML += `
+        <div style="align-self: flex-end; background: var(--blue); color: #fff; padding: 10px 14px; border-radius: 12px 12px 0 12px; max-width: 80%; font-size: 0.9rem;">
+            ${msg}
+        </div>
+    `;
+    chatContainer.scrollTop = chatContainer.scrollHeight;
+    
+    jarvisChatHistory.push({ role: "user", parts: [{ text: msg }] });
+    
+    const typingId = 'typing-' + Date.now();
+    chatContainer.innerHTML += `
+        <div id="${typingId}" style="align-self: flex-start; background: var(--bg-card); border: 1px solid var(--border); color: var(--text-light); padding: 10px 14px; border-radius: 12px 12px 12px 0; max-width: 80%; display: flex; align-items: center; gap: 8px; font-size: 0.9rem;">
+            <div class="sk" style="width: 12px; height: 12px; border-radius: 50%;"></div> Thinking...
+        </div>
+    `;
+    chatContainer.scrollTop = chatContainer.scrollHeight;
+    
+    try {
+        const res = await fetch('/api/jarvis-chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                history: jarvisChatHistory,
+                stats: globalSpoofStats,
+                tf: currentSpoofTf,
+                currentPrice: globalCurrentPrice,
+                cvdData: globalCvdData
+            })
+        });
+        const data = await res.json();
+        
+        document.getElementById(typingId).remove();
+        
+        if (data.success) {
+            chatContainer.innerHTML += `
+                <div style="align-self: flex-start; background: var(--bg-card); border: 1px solid var(--border); color: var(--text-light); padding: 10px 14px; border-radius: 12px 12px 12px 0; max-width: 90%; font-size: 0.9rem; line-height: 1.5;">
+                    ${data.text}
+                </div>
+            `;
+            jarvisChatHistory.push({ role: "model", parts: [{ text: data.text }] });
+        } else {
+            chatContainer.innerHTML += `<div style="color: var(--sell); text-align: center; font-size: 0.8rem;">Error: ${data.error}</div>`;
+            jarvisChatHistory.pop(); 
+        }
+    } catch (e) {
+        document.getElementById(typingId).remove();
+        chatContainer.innerHTML += `<div style="color: var(--sell); text-align: center; font-size: 0.8rem;">Network Error</div>`;
+        jarvisChatHistory.pop();
+    }
+    chatContainer.scrollTop = chatContainer.scrollHeight;
 }
 
 // ── INIT SYMBOL SELECTOR (Custom Dropdown) ────────────────────────
