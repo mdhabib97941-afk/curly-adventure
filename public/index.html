@@ -731,8 +731,8 @@ async function fetchAndRenderLiquidityRadar() {
             loader.textContent = 'Fetching BTC Orderbook...';
         }
         const [res, liqRes] = await Promise.all([
-            fetch('/api/btc-radar'),
-            fetch('/api/liquidity?timeframe=15m')
+            fetch('/api/btc-radar?_t=' + Date.now()),
+            fetch('/api/liquidity?timeframe=15m&_t=' + Date.now())
         ]);
         
         const d = await res.json();
