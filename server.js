@@ -603,18 +603,141 @@ function clusterOB(orders,isBid){
     return clusters.sort((a,b)=>b.volume-a.volume).slice(0,5);
 }
 
-// ─── PERIODIC SNAPSHOT ────────────────────────────────────────────────────────
-async function saveOBSnapshot(){
-    try{const r=await axios.get(`${BASE}/api/v3/depth?symbol=${SYMBOL}&limit=5`,{timeout:5000});const{bids,asks}=r.data;
-    const spread=parseFloat(asks[0][0])-parseFloat(bids[0][0]);
-    await OrderbookSnapshot.create({
-        symbol: SYMBOL, bid_price: parseFloat(bids[0][0]), bid_volume: parseFloat(bids[0][1]),
-        ask_price: parseFloat(asks[0][0]), ask_volume: parseFloat(asks[0][1]), spread: spread
+// ─── WEBSOCKET LIVE DATA (No REST API polling - avoids 418 IP ban) ──────────
+// We use Binance WebSocket streams for real-time data instead of polling REST API
+// This is free, unlimited, and will NOT trigger rate limits or IP bans.
+
+let wsDepth = null;
+let wsTrade = null;
+
+const WS_BASE = 'wss://stream.binance.com:9443/ws';
+
+function connectDepthStream(symbol) {
+    const streamSymbol = symbol.toLowerCase();
+    if (wsDepth) { try { wsDepth.close(); } catch(e) {} }
+    wsDepth = new WebSocket(`${WS_BASE}/${streamSymbol}@depth20@100ms`);
+    
+    wsDepth.on('message', (data) => {
+        try {
+            const d = JSON.parse(data);
+            const bids = d.bids || [];
+            const asks = d.asks || [];
+            
+            let totalBidVol = 0, totalAskVol = 0;
+            let maxBid = { price: 0, qty: 0 };
+            let maxAsk = { price: 0, qty: 0 };
+
+            for (const b of bids) {
+                const price = parseFloat(b[0]), qty = parseFloat(b[1]);
+                totalBidVol += qty;
+                if (qty > maxBid.qty) maxBid = { price, qty };
+            }
+            for (const a of asks) {
+                const price = parseFloat(a[0]), qty = parseFloat(a[1]);
+                totalAskVol += qty;
+                if (qty > maxAsk.qty) maxAsk = { price, qty };
+            }
+
+            const prevBid = liveOrderFlow.whaleWallBid;
+            const prevAsk = liveOrderFlow.whaleWallAsk;
+
+            liveOrderFlow.whaleWallBid = maxBid.qty > 1.5 ? maxBid : null;
+            liveOrderFlow.whaleWallAsk = maxAsk.qty > 1.5 ? maxAsk : null;
+
+            // Spoofing detection
+            if (prevBid && !liveOrderFlow.whaleWallBid && liveOrderFlow.currentPrice > prevBid.price) {
+                liveOrderFlow.spoofAlert = `🚨 Fake Buy Wall Pulled: $${prevBid.price}. Possible Dump incoming!`;
+            } else if (prevAsk && !liveOrderFlow.whaleWallAsk && liveOrderFlow.currentPrice < prevAsk.price) {
+                liveOrderFlow.spoofAlert = `🚨 Fake Sell Wall Pulled: $${prevAsk.price}. Possible Pump incoming!`;
+            }
+
+            if (totalBidVol > totalAskVol * 1.5 && bids.length > 0) {
+                liveOrderFlow.stopLossZone = `Retail Long SLs likely around $${parseFloat(bids[bids.length - 1][0]).toFixed(2)}`;
+            } else if (totalAskVol > totalBidVol * 1.5 && asks.length > 0) {
+                liveOrderFlow.stopLossZone = `Retail Short SLs likely around $${parseFloat(asks[asks.length - 1][0]).toFixed(2)}`;
+            } else {
+                liveOrderFlow.stopLossZone = 'Neutral - No obvious SL clusters';
+            }
+
+            // Also store for snapshot
+            if (liveOrderFlow.whaleWallBid && liveOrderFlow.whaleWallAsk) {
+                wsLatestDepth = { bids, asks };
+            }
+        } catch(e) {}
     });
-    }catch(e){}
+    wsDepth.on('error', (err) => console.error('[WS Depth Error]', err.message));
+    wsDepth.on('close', () => {
+        console.warn('[WS Depth] Closed. Reconnecting in 5s...');
+        setTimeout(() => connectDepthStream(SYMBOL), 5000);
+    });
 }
-setInterval(saveOBSnapshot,60000);
-saveOBSnapshot();
+
+function connectTradeStream(symbol) {
+    const streamSymbol = symbol.toLowerCase();
+    if (wsTrade) { try { wsTrade.close(); } catch(e) {} }
+    wsTrade = new WebSocket(`${WS_BASE}/${streamSymbol}@aggTrade`);
+
+    wsTrade.on('message', (data) => {
+        try {
+            const t = JSON.parse(data);
+            const qty = parseFloat(t.q);
+            const price = parseFloat(t.p);
+            liveOrderFlow.currentPrice = price;
+            
+            if (t.m) { // isBuyerMaker => market sell
+                liveOrderFlow.cvd -= qty;
+                liveOrderFlow.sellVol += qty;
+            } else { // market buy
+                liveOrderFlow.cvd += qty;
+                liveOrderFlow.buyVol += qty;
+            }
+            liveOrderFlow.cvd *= 0.9999; // slow decay
+
+            // Trap detection
+            if (liveOrderFlow.cvd < -10 && liveOrderFlow.whaleWallBid && price >= liveOrderFlow.whaleWallBid.price) {
+                liveOrderFlow.trapAlert = `🔴 Retail Trap: Heavy Retail Selling (${Math.abs(liveOrderFlow.cvd).toFixed(2)} BTC), Whale Buy Wall at $${liveOrderFlow.whaleWallBid.price}. Potential PUMP!`;
+            } else if (liveOrderFlow.cvd > 10 && liveOrderFlow.whaleWallAsk && price <= liveOrderFlow.whaleWallAsk.price) {
+                liveOrderFlow.trapAlert = `🔴 Retail Trap: Heavy Retail Buying (${liveOrderFlow.cvd.toFixed(2)} BTC), Whale Sell Wall at $${liveOrderFlow.whaleWallAsk.price}. Potential DUMP!`;
+            } else {
+                liveOrderFlow.trapAlert = 'No traps detected.';
+            }
+        } catch(e) {}
+    });
+    wsTrade.on('error', (err) => console.error('[WS Trade Error]', err.message));
+    wsTrade.on('close', () => {
+        console.warn('[WS Trade] Closed. Reconnecting in 5s...');
+        setTimeout(() => connectTradeStream(SYMBOL), 5000);
+    });
+}
+
+let wsLatestDepth = null;
+
+// Start WebSocket connections
+console.log('[WS] Starting Binance WebSocket streams (no REST polling)...');
+connectDepthStream(SYMBOL);
+connectTradeStream(SYMBOL);
+
+// Periodic DB Snapshot (uses WS data, no REST call)
+setInterval(async () => {
+    if (liveOrderFlow.whaleWallBid && liveOrderFlow.whaleWallAsk) {
+        try {
+            await OrderbookSnapshot.create({
+                symbol: SYMBOL,
+                bid_price: liveOrderFlow.whaleWallBid.price,
+                bid_volume: liveOrderFlow.buyVol,
+                ask_price: liveOrderFlow.whaleWallAsk.price,
+                ask_volume: liveOrderFlow.sellVol,
+                spread: liveOrderFlow.whaleWallAsk.price - liveOrderFlow.whaleWallBid.price
+            });
+            liveOrderFlow.buyVol = 0;
+            liveOrderFlow.sellVol = 0;
+        } catch(e) {}
+    }
+    try {
+        const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
+        await OrderbookSnapshot.deleteMany({ timestamp: { $lte: fortyEightHoursAgo } });
+    } catch(err) { console.error('Cleanup error:', err); }
+}, 60000);
 
 async function fetchAndStoreBTCDeepLiquidity() {
     try {
@@ -657,8 +780,9 @@ async function fetchAndStoreBTCDeepLiquidity() {
         console.error("Error saving BTC deep liquidity:", err.message);
     }
 }
-setInterval(fetchAndStoreBTCDeepLiquidity, 60000);
-fetchAndStoreBTCDeepLiquidity();
+setInterval(fetchAndStoreBTCDeepLiquidity, 90000);
+// Delay first call by 30s to let startup settle and reduce 418 risk
+setTimeout(fetchAndStoreBTCDeepLiquidity, 30000);
 
 // ─── API ROUTES ───────────────────────────────────────────────────────────────
 
@@ -1480,40 +1604,11 @@ async function pollBinanceOrderFlow() {
         if(brainLogs.length > 100) brainLogs.shift();
     }
 }
-
-// Poll every 10 seconds to avoid Binance rate limit (418 IP ban)
-setInterval(pollBinanceOrderFlow, 10000);
-pollBinanceOrderFlow();
+// NOTE: pollBinanceOrderFlow() REST polling removed. Data now comes from WebSocket streams above.
 
 // Endpoint for Strategy Lab UI
 app.get('/api/orderflow', (req, res) => {
     res.json(liveOrderFlow);
 });
-
-// Periodic DB Save (every 1 minute)
-setInterval(async () => {
-    if (liveOrderFlow.whaleWallBid && liveOrderFlow.whaleWallAsk) {
-        await OrderbookSnapshot.create({
-            symbol: SYMBOL,
-            bid_price: liveOrderFlow.whaleWallBid.price,
-            bid_volume: liveOrderFlow.buyVol,
-            ask_price: liveOrderFlow.whaleWallAsk.price,
-            ask_volume: liveOrderFlow.sellVol,
-            spread: liveOrderFlow.whaleWallAsk.price - liveOrderFlow.whaleWallBid.price
-        });
-        
-        // Reset volume counters after snapshot
-        liveOrderFlow.buyVol = 0;
-        liveOrderFlow.sellVol = 0;
-    }
-    
-    // Auto-cleanup: Keep only 48 hours of orderbook snapshots to prevent DB bloat
-    try {
-        const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
-        await OrderbookSnapshot.deleteMany({ timestamp: { $lte: fortyEightHoursAgo } });
-    } catch(err) {
-        console.error("Cleanup error:", err);
-    }
-}, 60000);
 
 app.listen(PORT, () => console.log(`[SERVER] Alpha-Flow SMC Brain v4 running on port ${PORT}`));
