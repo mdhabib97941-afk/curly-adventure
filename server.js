@@ -24,7 +24,24 @@ app.post('/api/set-symbol', (req, res) => {
     res.json({success: true, symbol: SYMBOL});
 });
 
-app.get('/api/symbol', (req, res) => {
+
+// --- PROXY ENDPOINT FOR CHART ---
+app.get('/api/proxy/klines', async (req, res) => {
+    try {
+        const { symbol, interval, limit, mode } = req.query;
+        let url = mode === 'futures' 
+            ? `https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`
+            : `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
+        const response = await axios.get(url, { timeout: 10000 });
+        res.json(response.data);
+    } catch (e) {
+        console.error('Proxy Error:', e.message);
+        res.status(500).json({ error: e.message });
+    }
+});
+// --- END PROXY ENDPOINT ---
+
+app.get('/api/symbol', async (req, res) => {
     res.json({symbol: SYMBOL});
 });
 
@@ -626,14 +643,16 @@ app.get('/api/btc-radar', async(req, res) => {
         }
 
         // --- NEW: Spoofing Analysis (Max vs Avg) ---
-        const last60 = await dbAll(`SELECT * FROM btc_deep_liquidity ORDER BY id DESC LIMIT 60`);
+        const last1440 = await dbAll(`SELECT * FROM btc_deep_liquidity ORDER BY id DESC LIMIT 1440`);
         let spoofStats = {
             '5m': { totalBids: 0, realBids: 0, fakeBids: 0, totalAsks: 0, realAsks: 0, fakeAsks: 0 },
             '15m': { totalBids: 0, realBids: 0, fakeBids: 0, totalAsks: 0, realAsks: 0, fakeAsks: 0 },
-            '1h': { totalBids: 0, realBids: 0, fakeBids: 0, totalAsks: 0, realAsks: 0, fakeAsks: 0 }
+            '1h': { totalBids: 0, realBids: 0, fakeBids: 0, totalAsks: 0, realAsks: 0, fakeAsks: 0 },
+            '4h': { totalBids: 0, realBids: 0, fakeBids: 0, totalAsks: 0, realAsks: 0, fakeAsks: 0 },
+            '24h': { totalBids: 0, realBids: 0, fakeBids: 0, totalAsks: 0, realAsks: 0, fakeAsks: 0 }
         };
         
-        if (last60 && last60.length > 0) {
+        if (last1440 && last1440.length > 0) {
             const calculateSpoof = (rows) => {
                 if(rows.length === 0) return null;
                 let sumBids = 0, sumAsks = 0, maxBids = 0, maxAsks = 0;
@@ -657,9 +676,11 @@ app.get('/api/btc-radar', async(req, res) => {
                 };
             };
             
-            spoofStats['5m'] = calculateSpoof(last60.slice(0, 5)) || spoofStats['5m'];
-            spoofStats['15m'] = calculateSpoof(last60.slice(0, 15)) || spoofStats['15m'];
-            spoofStats['1h'] = calculateSpoof(last60) || spoofStats['1h'];
+            spoofStats['5m'] = calculateSpoof(last1440.slice(0, 5)) || spoofStats['5m'];
+            spoofStats['15m'] = calculateSpoof(last1440.slice(0, 15)) || spoofStats['15m'];
+            spoofStats['1h'] = calculateSpoof(last1440.slice(0, 60)) || spoofStats['1h'];
+            spoofStats['4h'] = calculateSpoof(last1440.slice(0, 240)) || spoofStats['4h'];
+            spoofStats['24h'] = calculateSpoof(last1440) || spoofStats['24h'];
         }
 
         res.json({
@@ -679,10 +700,14 @@ app.get('/api/btc-radar', async(req, res) => {
     }
 });
 
-// 2. Live liquidity
+const liqCache = {};
 app.get('/api/liquidity', async(req,res)=>{
     try{
         const tf=req.query.timeframe||'15m';
+        const now = Date.now();
+        if (liqCache[tf] && now - liqCache[tf].time < 10000) {
+            return res.json(liqCache[tf].data);
+        }
         const[klRes,dpRes]=await Promise.all([
             axios.get(`${BASE}/api/v3/klines?symbol=${SYMBOL}&interval=${tf}&limit=250`,{timeout:8000}),
             axios.get(`${BASE}/api/v3/depth?symbol=${SYMBOL}&limit=20`,{timeout:8000})
@@ -709,9 +734,11 @@ app.get('/api/liquidity', async(req,res)=>{
             dbAll(`SELECT * FROM signals ORDER BY id DESC LIMIT 5`),
             dbAll(`SELECT * FROM orderbook_snapshots ORDER BY id DESC LIMIT 20`)
         ]);
-        res.json({status:'success',symbol:SYMBOL,timeframe:tf,current_price:cp,signal,
+        const responseData = {status:'success',symbol:SYMBOL,timeframe:tf,current_price:cp,signal,
             chart_liquidity:{swing_highs:swingHighs,swing_lows:swingLows},institutional_zones:instZones,
-            order_book_liquidity:{asks:topAsks,bids:topBids},history,signal_history:sigHist,ob_history:obHist, timeframe_bias: ctx});
+            order_book_liquidity:{asks:topAsks,bids:topBids},history,signal_history:sigHist,ob_history:obHist, timeframe_bias: ctx};
+        liqCache[tf] = { time: now, data: responseData };
+        res.json(responseData);
     }catch(e){res.status(500).json({error:e.message});}
 });
 
@@ -1122,7 +1149,7 @@ app.get('/api/orderflow', (req, res) => {
 });
 
 // Periodic DB Save (every 1 minute)
-setInterval(() => {
+setInterval(async () => {
     if (liveOrderFlow.whaleWallBid && liveOrderFlow.whaleWallAsk) {
         db.run(`INSERT INTO orderbook_snapshots (symbol, bid_price, bid_volume, ask_price, ask_volume, spread) VALUES (?, ?, ?, ?, ?, ?)`,
             [SYMBOL, liveOrderFlow.whaleWallBid.price, liveOrderFlow.buyVol, liveOrderFlow.whaleWallAsk.price, liveOrderFlow.sellVol, liveOrderFlow.whaleWallAsk.price - liveOrderFlow.whaleWallBid.price]);
@@ -1130,6 +1157,13 @@ setInterval(() => {
         // Reset volume counters after snapshot
         liveOrderFlow.buyVol = 0;
         liveOrderFlow.sellVol = 0;
+    }
+    
+    // Auto-cleanup: Keep only 48 hours of orderbook snapshots to prevent DB bloat
+    try {
+        await dbRun(`DELETE FROM orderbook_snapshots WHERE timestamp <= datetime('now', '-48 hours')`);
+    } catch(err) {
+        console.error("Cleanup error:", err);
     }
 }, 60000);
 
