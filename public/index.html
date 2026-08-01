@@ -415,16 +415,16 @@
 
     <!-- New: JARVIS AI Analyst -->
     <div class="card" style="margin-bottom: 20px; border: 1px solid var(--blue);">
-        <div class="card-hdr" style="background:var(--s3); display:flex; justify-content:space-between; align-items:center;">
-            <div>
-                <span class="card-icon" style="color:var(--blue);">🤖</span>
+        <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border); padding-bottom:12px;">
+            <div style="display:flex; align-items:center; gap:8px;">
+                <div style="width:10px; height:10px; border-radius:50%; background:var(--blue); box-shadow:0 0 10px var(--blue);"></div>
                 <span class="card-title" style="color:var(--blue); font-weight:bold;">J.A.R.V.I.S Market Analyst</span>
             </div>
-            <div style="font-size:0.75rem; color:var(--muted);" id="jarvisTime">Waiting for data...</div>
+            <button onclick="triggerJarvisAnalysis()" style="background:var(--blue); color:white; border:none; padding:6px 12px; border-radius:4px; cursor:pointer; font-size:0.8rem; font-weight:bold;">অ্যানালাইসিস জেনারেট করুন</button>
         </div>
         <div class="card-body" style="padding:16px; line-height:1.5; border-bottom: 1px solid var(--border);">
             <div id="jarvisOutput" style="font-size:0.95rem; color:var(--text);">
-                Initialize system to begin AI analysis...
+                Click the button above to generate a live market analysis.
             </div>
         </div>
         
@@ -935,8 +935,6 @@ function renderSpoofStats(tf) {
         document.getElementById('spoofSellFake').style.width = `${fakePct}%`;
         document.getElementById('spoofSellText').innerHTML = `Total: $${fmt(stats.totalAsks)} | <span style="color:#ef4444">Real: $${fmt(stats.realAsks)} (${realPct.toFixed(0)}%)</span> | <span style="color:var(--muted)">Fake: $${fmt(stats.fakeAsks)} (${fakePct.toFixed(0)}%)</span>`;
     }
-    
-    updateJarvisAnalysis(stats, tf);
 }
 
 let lastJarvisFetchTime = 0;
@@ -979,16 +977,13 @@ async function updateJarvisAnalysis(stats, tf) {
         
         if (data.success) {
             outputEl.innerHTML = data.html;
-            timeEl.innerText = `Analysis updated (${new Date().toLocaleTimeString()})`;
             lastJarvisFetchTime = Date.now();
         } else {
             outputEl.innerHTML = `<span style="color:var(--sell)">AI Error: ${data.error}</span>`;
-            timeEl.innerText = `Analysis failed`;
             lastJarvisFetchTime = Date.now(); // update time to prevent spamming
         }
     } catch(err) {
         outputEl.innerHTML = `<span style="color:var(--sell)">Failed to connect to J.A.R.V.I.S server.</span>`;
-        timeEl.innerText = `Analysis failed`;
         lastJarvisFetchTime = Date.now(); // update time to prevent spamming
         console.error(err);
     }
