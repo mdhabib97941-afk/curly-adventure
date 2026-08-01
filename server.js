@@ -592,7 +592,7 @@ async function fetchAndStoreBTCDeepLiquidity() {
         console.error("Error saving BTC deep liquidity:", err.message);
     }
 }
-setInterval(fetchAndStoreBTCDeepLiquidity, 60000);
+setInterval(fetchAndStoreBTCDeepLiquidity, 300000);
 fetchAndStoreBTCDeepLiquidity();
 
 // ─── API ROUTES ───────────────────────────────────────────────────────────────
@@ -1044,6 +1044,110 @@ let lastWhaleWallBid = null;
 let lastWhaleWallAsk = null;
 
 let lastTradeId = 0;
+
+
+const WS_BASE = 'wss://stream.binance.com:9443/ws';
+let wsDepth = null;
+let wsTrade = null;
+
+function connectDepthStream(symbol) {
+    const streamSymbol = symbol.toLowerCase();
+    if (wsDepth) { try { wsDepth.close(); } catch(e) {} }
+    wsDepth = new WebSocket(`${WS_BASE}/${streamSymbol}@depth20@100ms`);
+    
+    wsDepth.on('open', () => console.log(`[WS] Depth stream connected for ${symbol}`));
+    
+    wsDepth.on('message', (data) => {
+        try {
+            const parsed = JSON.parse(data);
+            if (!parsed.bids || !parsed.asks) return;
+            
+            let maxBid = { price: 0, qty: 0 };
+            let maxAsk = { price: 0, qty: 0 };
+            
+            for (let i = 0; i < parsed.bids.length; i++) {
+                const price = parseFloat(parsed.bids[i][0]);
+                const qty = parseFloat(parsed.bids[i][1]);
+                if (qty > maxBid.qty) maxBid = { price, qty };
+            }
+            for (let i = 0; i < parsed.asks.length; i++) {
+                const price = parseFloat(parsed.asks[i][0]);
+                const qty = parseFloat(parsed.asks[i][1]);
+                if (qty > maxAsk.qty) maxAsk = { price, qty };
+            }
+            
+            liveOrderFlow.whaleWallBid = maxBid.qty > 1.5 ? maxBid : null;
+            liveOrderFlow.whaleWallAsk = maxAsk.qty > 1.5 ? maxAsk : null;
+            
+            if (parsed.bids.length > 0 && parsed.asks.length > 0) {
+                liveOrderFlow.currentPrice = (parseFloat(parsed.bids[0][0]) + parseFloat(parsed.asks[0][0])) / 2;
+            }
+            
+            // Spoofing detection logic
+            if (lastWhaleWallBid && !liveOrderFlow.whaleWallBid) {
+                liveOrderFlow.spoofAlert = `Buy Wall at $${lastWhaleWallBid.price} PULLED! (Spoofing Detected)`;
+            }
+            if (lastWhaleWallAsk && !liveOrderFlow.whaleWallAsk) {
+                liveOrderFlow.spoofAlert = `Sell Wall at $${lastWhaleWallAsk.price} PULLED! (Spoofing Detected)`;
+            }
+            lastWhaleWallBid = liveOrderFlow.whaleWallBid;
+            lastWhaleWallAsk = liveOrderFlow.whaleWallAsk;
+            
+        } catch(e) {}
+    });
+    
+    wsDepth.on('close', () => {
+        console.log(`[WS] Depth stream closed, reconnecting in 5s...`);
+        setTimeout(() => connectDepthStream(symbol), 5000);
+    });
+    wsDepth.on('error', (err) => console.error('[WS] Depth error:', err.message));
+}
+
+function connectTradeStream(symbol) {
+    const streamSymbol = symbol.toLowerCase();
+    if (wsTrade) { try { wsTrade.close(); } catch(e) {} }
+    wsTrade = new WebSocket(`${WS_BASE}/${streamSymbol}@aggTrade`);
+    
+    wsTrade.on('open', () => console.log(`[WS] Trade stream connected for ${symbol}`));
+    
+    wsTrade.on('message', (data) => {
+        try {
+            const parsed = JSON.parse(data);
+            if (!parsed.p) return;
+            const price = parseFloat(parsed.p);
+            const qty = parseFloat(parsed.q);
+            const isBuyerMaker = parsed.m; 
+            
+            if (!isBuyerMaker) {
+                liveOrderFlow.buyVol += qty;
+                liveOrderFlow.cvd += qty;
+            } else {
+                liveOrderFlow.sellVol += qty;
+                liveOrderFlow.cvd -= qty;
+            }
+            
+            if (liveOrderFlow.whaleWallAsk && price >= liveOrderFlow.whaleWallAsk.price && isBuyerMaker) {
+                liveOrderFlow.trapAlert = `Bear Trap! Retail buying into Whale Sell Wall at ${price}`;
+            } else if (liveOrderFlow.whaleWallBid && price <= liveOrderFlow.whaleWallBid.price && !isBuyerMaker) {
+                liveOrderFlow.trapAlert = `Bull Trap! Retail selling into Whale Buy Wall at ${price}`;
+            } else {
+                liveOrderFlow.trapAlert = "No traps detected locally";
+            }
+            
+        } catch(e) {}
+    });
+    
+    wsTrade.on('close', () => {
+        console.log(`[WS] Trade stream closed, reconnecting in 5s...`);
+        setTimeout(() => connectTradeStream(symbol), 5000);
+    });
+    wsTrade.on('error', (err) => console.error('[WS] Trade error:', err.message));
+}
+
+console.log('[WS] Starting Binance WebSocket streams (no REST polling)...');
+connectDepthStream(SYMBOL);
+connectTradeStream(SYMBOL);
+
 
 async function pollBinanceOrderFlow() {
     try {
