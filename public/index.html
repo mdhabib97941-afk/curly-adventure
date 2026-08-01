@@ -964,7 +964,7 @@ async function updateJarvisAnalysis(stats, tf) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
-                stats: stats, 
+                stats: globalSpoofStats, 
                 tf: tf, 
                 currentPrice: globalCurrentPrice, 
                 cvdData: globalCvdData,
@@ -1026,7 +1026,7 @@ async function sendJarvisChat() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 history: jarvisChatHistory,
-                stats: globalSpoofStats[currentSpoofTf],
+                stats: globalSpoofStats,
                 tf: currentSpoofTf,
                 currentPrice: globalCurrentPrice,
                 cvdData: globalCvdData,
