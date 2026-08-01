@@ -592,8 +592,8 @@ function generateSignal(cp,swingHighs,swingLows,bids,asks,klines){
     const last3=klines.slice(-3);
     const bouncing=last3[2][4]>last3[1][4]&&last3[1][4]>last3[0][4];
     const dropping=last3[2][4]<last3[1][4]&&last3[1][4]<last3[0][4];
-    if(cp<rL&&sBid&&bouncing){const dist=cp-rL*0.997;return{signal:'BUY',confidence:'HIGH',entry:cp,stop_loss:rL*0.997,take_profit:cp+dist*2,reason:`Sweep below Swing Low $${rL.toFixed(0)}. Institutions grabbed liquidity. Price bouncing. BUY.`,why_buy:[`Swing Low $${rL.toFixed(0)} swept â€” retail SLs triggered`,`Strong bid wall confirms institutional buying`,`Bouncing â€” 3 bullish candles`,`Target: $${pH.toFixed(0)}`]};}
-    if(cp>rH&&sAsk&&dropping){const dist=rH*1.003-cp;return{signal:'SELL',confidence:'HIGH',entry:cp,stop_loss:rH*1.003,take_profit:cp-dist*2,reason:`Sweep above Swing High $${rH.toFixed(0)}. Institutions distributed. Price dropping. SELL.`,why_sell:[`Swing High $${rH.toFixed(0)} swept â€” retail buys triggered`,`Massive ask wall confirms institutional selling`,`Dropping â€” 3 bearish candles`,`Target: $${pL.toFixed(0)}`]};}
+    if(cp<rL&&sBid&&bouncing){const dist=cp-rL*0.997;return{signal:'BUY',confidence:'HIGH',entry:cp,stop_loss:rL*0.997,take_profit:cp+dist*2,reason:`Sweep below Swing Low $${rL.toFixed(0)}. Institutions grabbed liquidity. Price bouncing. BUY.`,why_buy:[`Swing Low $${rL.toFixed(0)} swept — retail SLs triggered`,`Strong bid wall confirms institutional buying`,`Bouncing — 3 bullish candles`,`Target: $${pH.toFixed(0)}`]};}
+    if(cp>rH&&sAsk&&dropping){const dist=rH*1.003-cp;return{signal:'SELL',confidence:'HIGH',entry:cp,stop_loss:rH*1.003,take_profit:cp-dist*2,reason:`Sweep above Swing High $${rH.toFixed(0)}. Institutions distributed. Price dropping. SELL.`,why_sell:[`Swing High $${rH.toFixed(0)} swept — retail buys triggered`,`Massive ask wall confirms institutional selling`,`Dropping — 3 bearish candles`,`Target: $${pL.toFixed(0)}`]};}
     return{signal:'WAIT',confidence:'LOW',entry:null,stop_loss:null,take_profit:null,reason:`No sweep detected. Wait for $${rL.toFixed(0)} sweep (BUY) or $${rH.toFixed(0)} sweep (SELL).`,why_wait:[`No institutional sweep detected yet`,`BUY setup: wait for sweep of $${rL.toFixed(0)}`,`SELL setup: wait for sweep of $${rH.toFixed(0)}`,`Do not trade until institutions move`]};
 }
 function clusterOB(orders,isBid){
@@ -944,8 +944,20 @@ function generateInternalJarvisAnalysis(data) {
     const support    = swingLows  && swingLows.length  > 0 ? swingLows[swingLows.length-1].price.toFixed(2)  : 'N/A';
     const resistance = swingHighs && swingHighs.length > 0 ? swingHighs[swingHighs.length-1].price.toFixed(2) : 'N/A';
 
-    let html = `<strong>[Internal AI]</strong> ${new Date().toLocaleTimeString()} &mdash; লাইভ মার্কেট অ্যানালাইসিস:<br><br>`;
-    if (price) html += `Price: <strong>$${parseFloat(price).toLocaleString()}</strong> | Support: <strong>$${support}</strong> | Resistance: <strong>$${resistance}</strong><br>`;
+    const fib50 = (support !== 'N/A' && resistance !== 'N/A') ? (parseFloat(resistance) + parseFloat(support)) / 2 : null;
+    let pdZone = '';
+    if (fib50 && price) {
+        if (price > fib50) pdZone = `<span style="color:var(--sell)">Premium Zone (High Risk to Buy)</span>`;
+        else pdZone = `<span style="color:var(--buy)">Discount Zone (High Risk to Sell)</span>`;
+    }
+
+    let html = `<strong>[Internal AI]</strong> ${new Date().toLocaleTimeString()} &mdash; লাইভ মার্কেট অ্যানালাইসিস:<br>`;
+    html += `&#128336; <strong>Session:</strong> ${getKillzone()}<br><br>`;
+    if (price) html += `Price: <strong>$${parseFloat(price).toLocaleString()}</strong> | Zone: ${pdZone}<br>`;
+    if (liveOrderFlow.openInterest) {
+        let oiColor = liveOrderFlow.oiTrend === 'Increasing' ? 'var(--buy)' : (liveOrderFlow.oiTrend === 'Decreasing' ? 'var(--sell)' : '#fff');
+        html += `Open Interest: <strong>${liveOrderFlow.openInterest.toLocaleString()}</strong> (<span style="color:${oiColor}">${liveOrderFlow.oiTrend}</span>)<br>`;
+    }
 
     // Volatility
     if (volatility && volatility.stdDevPct <= 0.15) {
@@ -1000,40 +1012,43 @@ function generateInternalJarvisAnalysis(data) {
         html += `<br>&#128308; Live Alert: <span style="color:var(--sell)">${wsTrap}</span><br>`;
     }
 
-    // Final Verdict Calculation
+    // Final Verdict Calculation (Anti-Retail SMC)
     let bullishScore = 0;
     let bearishScore = 0;
     
     if (imbalance && imbalance.bidRatio > 65) bullishScore++;
     if (imbalance && imbalance.askRatio > 65) bearishScore++;
-    
     if (cvdNet > 10) bullishScore++;
     if (cvdNet < -10) bearishScore++;
-    
     if (wsBid) bullishScore++;
     if (wsAsk) bearishScore++;
-    
     if (trapType === 'FAKE DUMP (Bear Trap)') bullishScore += 2;
     if (trapType === 'FAKE PUMP (Bull Trap)') bearishScore += 2;
     
     let verdict = "";
     let verdictColor = "";
-    
-    if (bullishScore > bearishScore + 1) {
-        verdict = "মার্কেট উপরের দিকে যাওয়ার (PUMP) সম্ভাবনা অনেক বেশি। লং (Long) সেটআপ খুঁজুন।";
-        verdictColor = "var(--buy)";
-    } else if (bearishScore > bullishScore + 1) {
-        verdict = "মার্কেট নিচের দিকে যাওয়ার (DUMP) সম্ভাবনা অনেক বেশি। শর্ট (Short) সেটআপ খুঁজুন।";
-        verdictColor = "var(--sell)";
-    } else if (bullishScore > bearishScore) {
-        verdict = "মার্কেট হালকা বুলিশ (Bullish)। তবে বড় কনফার্মেশন ছাড়া এন্ট্রি নেবেন না।";
+    let isSqueeze = false;
+
+    // Advanced OI & Premium/Discount integration
+    if (fib50 && price > fib50 && liveOrderFlow.oiTrend === 'Decreasing' && cvdNet > 0) {
+        verdict = "মার্কেট Premium Zone-এ আছে কিন্তু Open Interest কমছে! এটি রিয়েল পাম্প নয়, বরং Short Squeeze (ফেক পাম্প)। শর্ট করার জন্য রিজেকশনের অপেক্ষা করুন।";
         verdictColor = "#f59e0b";
-    } else if (bearishScore > bullishScore) {
-        verdict = "মার্কেট হালকা বিয়ারিশ (Bearish)। তবে বড় কনফার্মেশন ছাড়া এন্ট্রি নেবেন না।";
+        isSqueeze = true;
+    } else if (fib50 && price < fib50 && liveOrderFlow.oiTrend === 'Decreasing' && cvdNet < 0) {
+        verdict = "মার্কেট Discount Zone-এ আছে কিন্তু Open Interest কমছে! এটি রিয়েল ডাম্প নয়, বরং Long Liquidation (ফেক ডাম্প)। লং করার জন্য সাপোর্ট বাউন্সের অপেক্ষা করুন।";
         verdictColor = "#f59e0b";
-    } else {
-        verdict = "মার্কেট সম্পূর্ণ সাইডওয়েজ (Sideways) বা কনফিউজিং অবস্থায় আছে। এই মুহূর্তে ট্রেড করা ঝুঁকিপূর্ণ।";
-        verdictColor = "#9ca3af";
+        isSqueeze = true;
+    } else if (!isSqueeze) {
+        if (bullishScore > bearishScore + 1) {
+            verdict = "ইনস্টিটিউশনাল অর্ডার ফ্লো বুলিশ। প্রাইস Discount Zone-এ থাকলে লং (Long) সেটআপ নিতে পারেন।";
+            verdictColor = "var(--buy)";
+        } else if (bearishScore > bullishScore + 1) {
+            verdict = "ইনস্টিটিউশনাল অর্ডার ফ্লো বিয়ারিশ। প্রাইস Premium Zone-এ থাকলে শর্ট (Short) সেটআপ নিতে পারেন।";
+            verdictColor = "var(--sell)";
+        } else {
+            verdict = "মার্কেট সাইডওয়েজ বা কনফিউজিং। কোনো ক্লিয়ার ডাইরেকশন নেই, ট্রেড থেকে দূরে থাকুন।";
+            verdictColor = "#9ca3af";
+        }
     }
     
     html += `<br><hr style="border-color:#334155; margin:10px 0;"><strong style="font-size:1.1em;">&#128161; চূড়ান্ত সিদ্ধান্ত (Verdict):</strong> <span style="color:${verdictColor}; font-weight:bold;">${verdict}</span><br>`;
