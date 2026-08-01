@@ -730,8 +730,13 @@ async function fetchAndRenderLiquidityRadar() {
         if (container.innerHTML.trim() === '') {
             loader.textContent = 'Fetching BTC Orderbook...';
         }
-        const res = await fetch('/api/btc-radar');
+        const [res, liqRes] = await Promise.all([
+            fetch('/api/btc-radar'),
+            fetch('/api/liquidity?timeframe=15m')
+        ]);
+        
         const d = await res.json();
+        const liqD = await liqRes.json();
         
         if (d.success && d.data) {
             let newHTML = '';
@@ -895,12 +900,16 @@ async function fetchAndRenderLiquidityRadar() {
                 globalSpoofStats = d.data.spoofStats;
                 globalCvdData = d.data.cvdData;
                 globalCurrentPrice = currentPrice;
-                globalSwingHighs = d.data.swingHighs || [];
-                globalSwingLows = d.data.swingLows || [];
-                globalInstZones = d.data.instZones || [];
-                globalSignal = d.data.signal || null;
-                globalVolatility = d.data.volatility || null;
-                globalImbalance = d.data.imbalance || null;
+                
+                if (liqD && liqD.status === 'success') {
+                    globalSwingHighs = liqD.chart_liquidity.swing_highs || [];
+                    globalSwingLows = liqD.chart_liquidity.swing_lows || [];
+                    globalInstZones = liqD.institutional_zones || [];
+                    globalSignal = liqD.signal || null;
+                    globalVolatility = liqD.volatility || null;
+                    globalImbalance = liqD.imbalance || null;
+                }
+                
                 renderSpoofStats(currentSpoofTf);
                 renderVolatilityRadar();
             }
