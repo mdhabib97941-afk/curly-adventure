@@ -7,6 +7,23 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import WebSocket from 'ws';
 
+let binanceCooldownUntil = 0;
+
+axios.interceptors.request.use(config => {
+    if (Date.now() < binanceCooldownUntil && config.url && config.url.includes('api.binance.com')) {
+        return Promise.reject(new Error("Binance API on cooldown (418 Ban). Retrying later..."));
+    }
+    return config;
+});
+
+axios.interceptors.response.use(response => response, error => {
+    if (error.response && error.response.status === 418) {
+        console.warn("Binance 418 IP Ban detected! Triggering 5-minute cooldown.");
+        binanceCooldownUntil = Date.now() + 5 * 60 * 1000; // 5 minute cooldown
+    }
+    return Promise.reject(error);
+});
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
 
@@ -1025,7 +1042,7 @@ app.get('/api/liquidity', async(req,res)=>{
     try{
         const tf=req.query.timeframe||'15m';
         const now = Date.now();
-        if (liqCache[tf] && now - liqCache[tf].time < 10000) {
+        if (liqCache[tf] && (now - liqCache[tf].time < 10000 || Date.now() < binanceCooldownUntil)) {
             return res.json(liqCache[tf].data);
         }
         const[klRes,dpRes]=await Promise.all([
@@ -1464,8 +1481,8 @@ async function pollBinanceOrderFlow() {
     }
 }
 
-// Poll every 3 seconds
-setInterval(pollBinanceOrderFlow, 3000);
+// Poll every 10 seconds to avoid Binance rate limit (418 IP ban)
+setInterval(pollBinanceOrderFlow, 10000);
 pollBinanceOrderFlow();
 
 // Endpoint for Strategy Lab UI
