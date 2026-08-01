@@ -1000,6 +1000,44 @@ function generateInternalJarvisAnalysis(data) {
         html += `<br>&#128308; Live Alert: <span style="color:var(--sell)">${wsTrap}</span><br>`;
     }
 
+    // Final Verdict Calculation
+    let bullishScore = 0;
+    let bearishScore = 0;
+    
+    if (imbalance && imbalance.bidRatio > 65) bullishScore++;
+    if (imbalance && imbalance.askRatio > 65) bearishScore++;
+    
+    if (cvdNet > 10) bullishScore++;
+    if (cvdNet < -10) bearishScore++;
+    
+    if (wsBid) bullishScore++;
+    if (wsAsk) bearishScore++;
+    
+    if (trapType === 'FAKE DUMP (Bear Trap)') bullishScore += 2;
+    if (trapType === 'FAKE PUMP (Bull Trap)') bearishScore += 2;
+    
+    let verdict = "";
+    let verdictColor = "";
+    
+    if (bullishScore > bearishScore + 1) {
+        verdict = "মার্কেট উপরের দিকে যাওয়ার (PUMP) সম্ভাবনা অনেক বেশি। লং (Long) সেটআপ খুঁজুন।";
+        verdictColor = "var(--buy)";
+    } else if (bearishScore > bullishScore + 1) {
+        verdict = "মার্কেট নিচের দিকে যাওয়ার (DUMP) সম্ভাবনা অনেক বেশি। শর্ট (Short) সেটআপ খুঁজুন।";
+        verdictColor = "var(--sell)";
+    } else if (bullishScore > bearishScore) {
+        verdict = "মার্কেট হালকা বুলিশ (Bullish)। তবে বড় কনফার্মেশন ছাড়া এন্ট্রি নেবেন না।";
+        verdictColor = "#f59e0b";
+    } else if (bearishScore > bullishScore) {
+        verdict = "মার্কেট হালকা বিয়ারিশ (Bearish)। তবে বড় কনফার্মেশন ছাড়া এন্ট্রি নেবেন না।";
+        verdictColor = "#f59e0b";
+    } else {
+        verdict = "মার্কেট সম্পূর্ণ সাইডওয়েজ (Sideways) বা কনফিউজিং অবস্থায় আছে। এই মুহূর্তে ট্রেড করা ঝুঁকিপূর্ণ।";
+        verdictColor = "#9ca3af";
+    }
+    
+    html += `<br><hr style="border-color:#334155; margin:10px 0;"><strong style="font-size:1.1em;">&#128161; চূড়ান্ত সিদ্ধান্ত (Verdict):</strong> <span style="color:${verdictColor}; font-weight:bold;">${verdict}</span><br>`;
+
     return html;
 }
 
