@@ -938,18 +938,19 @@ function renderSpoofStats(tf) {
 }
 
 let lastJarvisFetchTime = 0;
+
+function triggerJarvisAnalysis() {
+    if (!globalSpoofStats) {
+        alert("Market data not loaded yet. Please wait...");
+        return;
+    }
+    updateJarvisAnalysis(globalSpoofStats[currentSpoofTf], currentSpoofTf);
+}
+
 async function updateJarvisAnalysis(stats, tf) {
     if(!stats) return;
-    const timeEl = document.getElementById('jarvisTime');
     const outputEl = document.getElementById('jarvisOutput');
-    if(!timeEl || !outputEl) return;
-    
-    // Only call Gemini API max once every 2 minutes to prevent rate limits
-    if (Date.now() - lastJarvisFetchTime < 120000 && outputEl.innerHTML.trim() !== '') {
-        return; 
-    }
-    
-    timeEl.innerText = `AI Analysis based on live ${tf} data...`;
+    if(!outputEl) return;
     
     // Loading State
     outputEl.innerHTML = `<div style="display: flex; align-items: center; gap: 10px; padding: 10px 0;">
