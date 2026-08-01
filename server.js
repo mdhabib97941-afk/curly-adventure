@@ -757,7 +757,13 @@ Sell Walls (Asks): Total $${(stats.totalAsks/1000000).toFixed(1)}M (Real: ${(sta
 Net Market Buy/Sell Orders (CVD): ${cvdData ? (cvdData.netCvd > 0 ? '+'+cvdData.netCvd.toFixed(2)+' BTC Bought' : cvdData.netCvd.toFixed(2)+' BTC Sold') : 'N/A'}
 `;
 
-        const models = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-2.0-flash-lite'];
+        const models = [
+            'gemini-2.5-flash',
+            'gemini-2.5-flash-lite',
+            'gemini-2.0-flash',
+            'gemini-2.0-flash-lite',
+            'gemini-1.5-flash'
+        ];
         let resultHtml = null;
         
         for (const model of models) {
@@ -773,7 +779,8 @@ Net Market Buy/Sell Orders (CVD): ${cvdData ? (cvdData.netCvd > 0 ? '+'+cvdData.
                     break; // Success
                 }
             } catch (modelErr) {
-                console.warn(`Model ${model} failed:`, modelErr.message);
+                const errMsg = modelErr.response && modelErr.response.data ? JSON.stringify(modelErr.response.data) : modelErr.message;
+                console.warn(`AI Model ${model} failed:`, errMsg);
                 // Continue to next model
             }
         }
@@ -814,7 +821,13 @@ Net Market Orders (CVD): ${cvdData ? (cvdData.netCvd > 0 ? '+'+cvdData.netCvd.to
 
 Based on this data, answer the user's question. Identify traps and spoofing if relevant.`;
 
-        const models = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-2.0-flash-lite'];
+        const models = [
+            'gemini-2.5-flash',
+            'gemini-2.5-flash-lite',
+            'gemini-2.0-flash',
+            'gemini-2.0-flash-lite',
+            'gemini-1.5-flash'
+        ];
         let resultHtml = null;
         
         for (const model of models) {
@@ -833,7 +846,8 @@ Based on this data, answer the user's question. Identify traps and spoofing if r
                     break;
                 }
             } catch (modelErr) {
-                console.warn(`Chat Model ${model} failed:`, modelErr.message);
+                const errMsg = modelErr.response && modelErr.response.data ? JSON.stringify(modelErr.response.data) : modelErr.message;
+                console.warn(`Chat Model ${model} failed:`, errMsg);
             }
         }
         
