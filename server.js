@@ -31,8 +31,8 @@ app.get('/api/proxy/klines', async (req, res) => {
     try {
         const { symbol, interval, limit, mode } = req.query;
         let url = mode === 'futures' 
-            ? `https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`
-            : `https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
+            ? `https://api1.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`
+            : `https://api1.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
         const response = await axios.get(url, { timeout: 10000 });
         res.json(response.data);
     } catch (e) {
@@ -451,8 +451,8 @@ async function analyzeAllPatterns() {
 // ─── DOWNLOAD ENGINE ───────────────────────────────────────────────────────────
 async function downloadChunk(tf, endTime) {
     const url = endTime
-        ? `https://fapi.binance.com/fapi/v1/klines?symbol=${SYMBOL}&interval=${tf}&endTime=${endTime}&limit=1000`
-        : `https://fapi.binance.com/fapi/v1/klines?symbol=${SYMBOL}&interval=${tf}&limit=1000`;
+        ? `https://api1.binance.com/api/v3/klines?symbol=${SYMBOL}&interval=${tf}&endTime=${endTime}&limit=1000`
+        : `https://api1.binance.com/api/v3/klines?symbol=${SYMBOL}&interval=${tf}&limit=1000`;
     const res = await axios.get(url, {timeout:15000});
     let inserted=0;
     for (const k of res.data) {
@@ -548,7 +548,7 @@ function clusterOB(orders,isBid){
 
 // ─── PERIODIC SNAPSHOT ────────────────────────────────────────────────────────
 async function saveOBSnapshot(){
-    try{const r=await axios.get(`https://fapi.binance.com/fapi/v1/depth?symbol=${SYMBOL}&limit=5`,{timeout:5000});const{bids,asks}=r.data;
+    try{const r=await axios.get(`https://api1.binance.com/api/v3/depth?symbol=${SYMBOL}&limit=5`,{timeout:5000});const{bids,asks}=r.data;
     const spread=parseFloat(asks[0][0])-parseFloat(bids[0][0]);
     await dbRun(`INSERT INTO orderbook_snapshots (symbol,bid_price,bid_volume,ask_price,ask_volume,spread) VALUES (?,?,?,?,?,?)`,
         [SYMBOL,parseFloat(bids[0][0]),parseFloat(bids[0][1]),parseFloat(asks[0][0]),parseFloat(asks[0][1]),spread]);}catch(e){}
@@ -558,7 +558,7 @@ saveOBSnapshot();
 
 async function fetchAndStoreBTCDeepLiquidity() {
     try {
-        const depthRes = await axios.get(`https://fapi.binance.com/fapi/v1/depth?symbol=BTCUSDT&limit=1000`, { timeout: 10000 });
+        const depthRes = await axios.get(`https://api1.binance.com/api/v3/depth?symbol=BTCUSDT&limit=1000`, { timeout: 10000 });
         const bids = depthRes.data.bids;
         const asks = depthRes.data.asks;
         if (!bids.length || !asks.length) return;
@@ -616,7 +616,7 @@ app.get('/api/btc-radar', async(req, res) => {
         // Get Live Price
         let currentPrice = null;
         try {
-            const priceRes = await axios.get(`https://fapi.binance.com/fapi/v1/ticker/price?symbol=BTCUSDT`, { timeout: 3000 });
+            const priceRes = await axios.get(`https://api1.binance.com/api/v3/ticker/price?symbol=BTCUSDT`, { timeout: 3000 });
             currentPrice = parseFloat(priceRes.data.price);
         } catch (e) {
             console.error("Failed to fetch live BTC price for radar", e.message);
@@ -646,7 +646,7 @@ app.get('/api/btc-radar', async(req, res) => {
         // Calculate 15m CVD from Binance Klines
         let cvdData = null;
         try {
-            const klineRes = await axios.get(`https://fapi.binance.com/fapi/v1/klines?symbol=BTCUSDT&interval=15m&limit=1`, { timeout: 3000 });
+            const klineRes = await axios.get(`https://api1.binance.com/api/v3/klines?symbol=BTCUSDT&interval=15m&limit=1`, { timeout: 3000 });
             if (klineRes.data && klineRes.data.length > 0) {
                 const k = klineRes.data[0];
                 const totalVol = parseFloat(k[5]); // Total base asset volume
@@ -731,8 +731,8 @@ app.get('/api/liquidity', async(req,res)=>{
             return res.json(liqCache[tf].data);
         }
         const[klRes,dpRes]=await Promise.all([
-            axios.get(`https://fapi.binance.com/fapi/v1/klines?symbol=${SYMBOL}&interval=${tf}&limit=250`,{timeout:8000}),
-            axios.get(`https://fapi.binance.com/fapi/v1/depth?symbol=${SYMBOL}&limit=20`,{timeout:8000})
+            axios.get(`https://api1.binance.com/api/v3/klines?symbol=${SYMBOL}&interval=${tf}&limit=250`,{timeout:8000}),
+            axios.get(`https://api1.binance.com/api/v3/depth?symbol=${SYMBOL}&limit=20`,{timeout:8000})
         ]);
         const klines=klRes.data; const{bids,asks}=dpRes.data;
         const cp=parseFloat(klines[klines.length-1][4]);
@@ -810,7 +810,7 @@ app.get('/api/strategy-lab', async(req,res)=>{
         // --- FIX: Fetch real-time data for the Live Context banner ---
         let liveCtx = null, liveRec = null, liveSMC = null, smc_counts = {};
         try {
-            const liveRes = await axios.get('https://fapi.binance.com/fapi/v1/klines', { params: { symbol: SYMBOL, interval: tf, limit: 250 } });
+            const liveRes = await axios.get('https://api1.binance.com/api/v3/klines', { params: { symbol: SYMBOL, interval: tf, limit: 250 } });
             const liveCandles = liveRes.data.map(k => ({
                 time: k[0], open: parseFloat(k[1]), high: parseFloat(k[2]), low: parseFloat(k[3]), close: parseFloat(k[4]), volume: parseFloat(k[5])
             }));
@@ -871,7 +871,7 @@ async function analyzeFailedTrade(trade) {
     // 1. Fetch candles around the trade execution to see WHY it failed
     const symbol = trade.symbol;
     try {
-        const response = await axios.get('https://fapi.binance.com/fapi/v1/klines', {
+        const response = await axios.get('https://api1.binance.com/api/v3/klines', {
             params: { symbol: symbol, interval: trade.timeframe, limit: 100 }
         });
         const candles = response.data.map(k => ({
@@ -925,7 +925,7 @@ async function runBrainTrader() {
     try {
         const symbol = SYMBOL;
         const tf = '15m'; // Brain uses 15m for stability
-        const response = await axios.get('https://fapi.binance.com/fapi/v1/klines', {
+        const response = await axios.get('https://api1.binance.com/api/v3/klines', {
             params: { symbol: symbol, interval: tf, limit: 500 }
         });
         const candles = response.data.map(k => ({
