@@ -413,6 +413,27 @@
         </div>
     </div>
 
+    <!-- New: Volatility & Spike Radar -->
+    <div class="card" style="margin-bottom: 20px;">
+        <div class="card-hdr" style="background:var(--s3);">
+            <span class="card-icon">⚡</span>
+            <span class="card-title">Volatility & Spike Radar</span>
+        </div>
+        <div class="card-body">
+            <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
+                <span>Market Volatility Status:</span>
+                <strong id="volStatus">Loading...</strong>
+            </div>
+            <div style="display:flex; justify-content:space-between;">
+                <span>Order Book Imbalance:</span>
+                <strong id="imbStatus">Loading...</strong>
+            </div>
+            <div style="margin-top:10px; font-size:0.85rem; color:var(--muted);" id="volDetails">
+                Awaiting data...
+            </div>
+        </div>
+    </div>
+
     <!-- New: JARVIS AI Analyst -->
     <div class="card" style="margin-bottom: 20px; border: 1px solid var(--blue);">
         <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border); padding-bottom:12px;">
@@ -878,7 +899,10 @@ async function fetchAndRenderLiquidityRadar() {
                 globalSwingLows = d.data.swingLows || [];
                 globalInstZones = d.data.instZones || [];
                 globalSignal = d.data.signal || null;
+                globalVolatility = d.data.volatility || null;
+                globalImbalance = d.data.imbalance || null;
                 renderSpoofStats(currentSpoofTf);
+                renderVolatilityRadar();
             }
             
             loader.textContent = 'Live • Updated ' + new Date().toLocaleTimeString();
@@ -899,6 +923,26 @@ let globalSwingHighs = [];
 let globalSwingLows = [];
 let globalInstZones = [];
 let globalSignal = null;
+let globalVolatility = null;
+let globalImbalance = null;
+
+function renderVolatilityRadar() {
+    if(!globalVolatility || !globalImbalance) return;
+    
+    const volStatusEl = document.getElementById('volStatus');
+    const imbStatusEl = document.getElementById('imbStatus');
+    const volDetailsEl = document.getElementById('volDetails');
+    
+    if(!volStatusEl || !imbStatusEl || !volDetailsEl) return;
+    
+    volStatusEl.innerText = globalVolatility.status;
+    volStatusEl.style.color = globalVolatility.stdDevPct <= 0.15 ? '#f59e0b' : (globalVolatility.stdDevPct > 0.40 ? 'var(--sell)' : 'var(--buy)');
+    
+    imbStatusEl.innerText = globalImbalance.status;
+    imbStatusEl.style.color = globalImbalance.status.includes('UP') || globalImbalance.status.includes('Bullish') ? 'var(--buy)' : (globalImbalance.status.includes('DOWN') || globalImbalance.status.includes('Bearish') ? 'var(--sell)' : 'var(--text)');
+    
+    volDetailsEl.innerHTML = `StdDev (Squeeze Indicator): ${globalVolatility.stdDevPct.toFixed(2)}% | Bids: ${globalImbalance.bidRatio.toFixed(1)}% | Asks: ${globalImbalance.askRatio.toFixed(1)}%`;
+}
 
 function renderSpoofStats(tf) {
     if(!globalSpoofStats) return;
@@ -970,7 +1014,9 @@ async function updateJarvisAnalysis(stats, tf) {
                 swingHighs: globalSwingHighs,
                 swingLows: globalSwingLows,
                 instZones: globalInstZones,
-                signal: globalSignal
+                signal: globalSignal,
+                volatility: globalVolatility,
+                imbalance: globalImbalance
             })
         });
         
@@ -1029,7 +1075,9 @@ async function sendJarvisChat() {
                 swingHighs: globalSwingHighs,
                 swingLows: globalSwingLows,
                 instZones: globalInstZones,
-                signal: globalSignal
+                signal: globalSignal,
+                volatility: globalVolatility,
+                imbalance: globalImbalance
             })
         });
         const data = await res.json();
