@@ -756,9 +756,35 @@ app.get('/api/liquidity', async(req,res)=>{
             dbAll(`SELECT * FROM signals ORDER BY id DESC LIMIT 5`),
             dbAll(`SELECT * FROM orderbook_snapshots ORDER BY id DESC LIMIT 20`)
         ]);
+        
+        // --- NEW: Volatility (StdDev) ---
+        const closes = klines.slice(-20).map(k => parseFloat(k[4]));
+        const mean = closes.reduce((a, b) => a + b, 0) / closes.length;
+        const variance = closes.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / closes.length;
+        const stdDev = Math.sqrt(variance);
+        const stdDevPct = (stdDev / cp) * 100;
+        let volStatus = 'Normal';
+        if(stdDevPct <= 0.15) volStatus = 'Squeezed (Breakout Pending)';
+        else if(stdDevPct > 0.40) volStatus = 'High Volatility';
+        const volatility = { stdDevPct, status: volStatus };
+
+        // --- NEW: Orderbook Imbalance ---
+        let totalBids = 0, totalAsks = 0;
+        bids.forEach(b => totalBids += parseFloat(b[1]));
+        asks.forEach(a => totalAsks += parseFloat(a[1]));
+        const totalOB = totalBids + totalAsks;
+        const bidRatio = totalOB ? (totalBids / totalOB) * 100 : 50;
+        const askRatio = totalOB ? (totalAsks / totalOB) * 100 : 50;
+        let imbStatus = 'Neutral';
+        if(bidRatio > 65) imbStatus = 'Strong Bullish (Buy Walls)';
+        else if(bidRatio > 55) imbStatus = 'Bullish Bias';
+        else if(askRatio > 65) imbStatus = 'Strong Bearish (Sell Walls)';
+        else if(askRatio > 55) imbStatus = 'Bearish Bias';
+        const imbalance = { bidRatio, askRatio, status: imbStatus };
+
         const responseData = {status:'success',symbol:SYMBOL,timeframe:tf,current_price:cp,signal,
             chart_liquidity:{swing_highs:swingHighs,swing_lows:swingLows},institutional_zones:instZones,
-            order_book_liquidity:{asks:topAsks,bids:topBids},history,signal_history:sigHist,ob_history:obHist, timeframe_bias: ctx};
+            order_book_liquidity:{asks:topAsks,bids:topBids},history,signal_history:sigHist,ob_history:obHist, timeframe_bias: ctx, volatility, imbalance};
         liqCache[tf] = { time: now, data: responseData };
         res.json(responseData);
     }catch(e){res.status(500).json({error:e.message});}
