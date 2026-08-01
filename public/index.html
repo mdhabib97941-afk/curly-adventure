@@ -874,6 +874,10 @@ async function fetchAndRenderLiquidityRadar() {
                 globalSpoofStats = d.data.spoofStats;
                 globalCvdData = d.data.cvdData;
                 globalCurrentPrice = currentPrice;
+                globalSwingHighs = d.data.swingHighs || [];
+                globalSwingLows = d.data.swingLows || [];
+                globalInstZones = d.data.instZones || [];
+                globalSignal = d.data.signal || null;
                 renderSpoofStats(currentSpoofTf);
             }
             
@@ -891,6 +895,10 @@ let globalSpoofStats = null;
 let currentSpoofTf = '15m';
 let globalCvdData = null;
 let globalCurrentPrice = 0;
+let globalSwingHighs = [];
+let globalSwingLows = [];
+let globalInstZones = [];
+let globalSignal = null;
 
 function renderSpoofStats(tf) {
     if(!globalSpoofStats) return;
@@ -959,7 +967,11 @@ async function updateJarvisAnalysis(stats, tf) {
                 stats: stats, 
                 tf: tf, 
                 currentPrice: globalCurrentPrice, 
-                cvdData: globalCvdData 
+                cvdData: globalCvdData,
+                swingHighs: globalSwingHighs,
+                swingLows: globalSwingLows,
+                instZones: globalInstZones,
+                signal: globalSignal
             })
         });
         
@@ -1014,10 +1026,14 @@ async function sendJarvisChat() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 history: jarvisChatHistory,
-                stats: globalSpoofStats,
+                stats: globalSpoofStats[currentSpoofTf],
                 tf: currentSpoofTf,
                 currentPrice: globalCurrentPrice,
-                cvdData: globalCvdData
+                cvdData: globalCvdData,
+                swingHighs: globalSwingHighs,
+                swingLows: globalSwingLows,
+                instZones: globalInstZones,
+                signal: globalSignal
             })
         });
         const data = await res.json();
