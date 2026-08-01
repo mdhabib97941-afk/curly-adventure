@@ -70,14 +70,14 @@ const BASE   = 'https://data-api.binance.vision';
 // Timeframe intervals in milliseconds
 const TF_MS = { '5m': 300000, '15m': 900000, '1h': 3600000, '4h': 14400000, '1d': 86400000 };
 
-// â”€â”€ DATABASE (SQLite for temporary, MongoDB for persistent) â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬ DATABASE (SQLite for temporary, MongoDB for persistent) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 const db = new sqlite3.Database(path.join(__dirname, 'database.sqlite'));
 
 // --- MongoDB Setup ---
 const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://user:pass@cluster.mongodb.net/alphaflow';
 mongoose.connect(MONGO_URI)
-    .then(() => console.log('âœ… Connected to MongoDB (Persistent Storage)'))
-    .catch(err => console.error('âŒ MongoDB connection error (Check your MONGO_URI):', err));
+    .then(() => console.log('Ã¢Å“â€¦ Connected to MongoDB (Persistent Storage)'))
+    .catch(err => console.error('Ã¢ÂÅ’ MongoDB connection error (Check your MONGO_URI):', err));
 
 const OrderbookSnapshot = mongoose.model('OrderbookSnapshot', new mongoose.Schema({
     timestamp: { type: Date, default: Date.now },
@@ -164,10 +164,10 @@ const dbRun = (sql,p=[]) => new Promise((res,rej) => db.run(sql,p,function(e){ e
 const dbAll = (sql,p=[]) => new Promise((res,rej) => db.all(sql,p,(e,rows)=>{ e?rej(e):res(rows); }));
 const dbGet = (sql,p=[]) => new Promise((res,rej) => db.get(sql,p,(e,row)=>{ e?rej(e):res(row); }));
 
-// â”€â”€â”€ DOWNLOAD STATUS (in-memory) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ DOWNLOAD STATUS (in-memory) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 let dlStatus = { running: false, progress: 0, message: 'Not started', log: [] };
 
-// â”€â”€â”€ MATH HELPERS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ MATH HELPERS Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 function calcVWAP(candlesSubset) {
     if (candlesSubset.length === 0) return 0;
     let sumPV = 0, sumV = 0;
@@ -198,7 +198,7 @@ function calcATR(candles, period=14) {
     return trs.slice(-period).reduce((a,b)=>a+b,0) / Math.min(period, trs.length);
 }
 
-// â”€â”€â”€ SMC STRUCTURE DETECTION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ SMC STRUCTURE DETECTION Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 function detectSwingsSMC(candles, window=3) {
     const highs=[], lows=[];
     for (let i=window; i<candles.length-window; i++) {
@@ -213,7 +213,7 @@ function detectSwingsSMC(candles, window=3) {
     return {highs, lows};
 }
 
-// Detect BOS: Break of Structure â€” price closes beyond previous swing
+// Detect BOS: Break of Structure Ã¢â‚¬â€ price closes beyond previous swing
 function detectBOS(candles, highs, lows) {
     const events = [];
     for (let i=1; i<candles.length; i++) {
@@ -358,15 +358,15 @@ function evalStrategies(candles, patterns, bosEvents, chochEvents, obsList, fvgL
         const vwapAligned = (isBuy && ctx.trend==='UPTREND') || (!isBuy && ctx.trend==='DOWNTREND');
         const structBreak = isBuy ? afterCandles[0]?.close > sw.open : afterCandles[0]?.close < sw.open;
 
-        // SMC: S7 â€” BOS + OB Retest + Liquidity Sweep
+        // SMC: S7 Ã¢â‚¬â€ BOS + OB Retest + Liquidity Sweep
         const nearBOS = bosEvents.some(b=>Math.abs(b.idx-idx)<=5);
         const nearOB  = obsList.some(o=>Math.abs(o.idx-idx)<=8 && ((isBuy && o.type==='OB_BULL' && sw.low < o.ob_bottom) || (!isBuy && o.type==='OB_BEAR' && sw.high > o.ob_top)));
-        // SMC: S8 â€” CHoCH + FVG
+        // SMC: S8 Ã¢â‚¬â€ CHoCH + FVG
         const nearCHoCH = chochEvents.some(c=>Math.abs(c.idx-idx)<=8);
         const nearFVG   = fvgList.some(f=>Math.abs(f.idx-idx)<=5 && ((isBuy && f.type==='FVG_BULL') || (!isBuy && f.type==='FVG_BEAR')));
-        // SMC: S9 â€” EQH/EQL sweep
+        // SMC: S9 Ã¢â‚¬â€ EQH/EQL sweep
         const nearEQHL  = eqhlList.some(e=>Math.abs(e.idx-idx)<=3);
-        // SMC: S10 â€” Full SMC (CHoCH + OB + Volume)
+        // SMC: S10 Ã¢â‚¬â€ Full SMC (CHoCH + OB + Volume)
         const fullSMC = nearCHoCH && nearOB && isVolSpike;
 
         const outcome = pat.outcome==='UP', win = isBuy?outcome:!outcome, pct = pat.pct_move;
@@ -401,7 +401,7 @@ function evalStrategies(candles, patterns, bosEvents, chochEvents, obsList, fvgL
     return result;
 }
 
-// â”€â”€â”€ PATTERN ANALYSIS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ PATTERN ANALYSIS Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 function detectSwingPoints(candles, window=5) {
     const highs=[], lows=[];
     for (let i=window; i<candles.length-window; i++) {
@@ -467,7 +467,7 @@ async function analyzeAllPatterns() {
     }
 }
 
-// â”€â”€â”€ DOWNLOAD ENGINE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ DOWNLOAD ENGINE Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 async function downloadChunk(tf, endTime) {
     const url = endTime
         ? `${BASE}/api/v3/klines?symbol=${SYMBOL}&interval=${tf}&endTime=${endTime}&limit=1000`
@@ -487,7 +487,7 @@ async function downloadChunk(tf, endTime) {
 
 async function runPartDownload(part) {
     if (dlStatus.running) return;
-    dlStatus = {running:true, progress:0, message:`Starting Part ${part} downloadâ€¦`, log:[]};
+    dlStatus = {running:true, progress:0, message:`Starting Part ${part} downloadÃ¢â‚¬Â¦`, log:[]};
     const TFS = ['5m','15m','1h','4h','1d'];
     // Part N: go back N*1000 bars from now for each timeframe
     for (let t=0; t<TFS.length; t++) {
@@ -495,20 +495,20 @@ async function runPartDownload(part) {
         const interval = TF_MS[tf];
         // Part 1 = latest, Part 2 = 1000-2000 bars back, etc.
         const endTime = Date.now() - (part-1) * 1000 * interval;
-        dlStatus.message = `[Part ${part}] Downloading ${tf}â€¦`;
+        dlStatus.message = `[Part ${part}] Downloading ${tf}Ã¢â‚¬Â¦`;
         try {
             const r = await downloadChunk(tf, part===1 ? null : endTime);
             const msg = `[Part ${part}] ${tf}: ${r.inserted} new candles saved`;
             dlStatus.log.push(msg);
             dlStatus.message = msg;
         } catch(e) {
-            dlStatus.log.push(`[Part ${part}] ${tf}: Error â€” ${e.message}`);
+            dlStatus.log.push(`[Part ${part}] ${tf}: Error Ã¢â‚¬â€ ${e.message}`);
         }
         dlStatus.progress = Math.round(((t+1)/TFS.length) * 70);
     }
     // Count total
     const total = await dbGet(`SELECT COUNT(*) as c FROM candles WHERE symbol=?`,[SYMBOL]);
-    dlStatus.message = `Running pattern analysis on ${total?.c||0} candlesâ€¦`;
+    dlStatus.message = `Running pattern analysis on ${total?.c||0} candlesÃ¢â‚¬Â¦`;
     dlStatus.progress = 75;
     await analyzeAllPatterns();
     dlStatus.progress = 100;
@@ -516,7 +516,7 @@ async function runPartDownload(part) {
     dlStatus.running = false;
 }
 
-// ðŸŽ¯ðŸŽ¯ðŸŽ¯ LIVE ANALYSIS HELPERS ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯ðŸŽ¯
+// Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯ LIVE ANALYSIS HELPERS Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯
 
 function calculateVolatility(klines) {
     if(!klines || klines.length < 20) return { status: 'Normal', stdDevPct: 0 };
@@ -592,8 +592,8 @@ function generateSignal(cp,swingHighs,swingLows,bids,asks,klines){
     const last3=klines.slice(-3);
     const bouncing=last3[2][4]>last3[1][4]&&last3[1][4]>last3[0][4];
     const dropping=last3[2][4]<last3[1][4]&&last3[1][4]<last3[0][4];
-    if(cp<rL&&sBid&&bouncing){const dist=cp-rL*0.997;return{signal:'BUY',confidence:'HIGH',entry:cp,stop_loss:rL*0.997,take_profit:cp+dist*2,reason:`Sweep below Swing Low $${rL.toFixed(0)}. Institutions grabbed liquidity. Price bouncing. BUY.`,why_buy:[`Swing Low $${rL.toFixed(0)} swept — retail SLs triggered`,`Strong bid wall confirms institutional buying`,`Bouncing — 3 bullish candles`,`Target: $${pH.toFixed(0)}`]};}
-    if(cp>rH&&sAsk&&dropping){const dist=rH*1.003-cp;return{signal:'SELL',confidence:'HIGH',entry:cp,stop_loss:rH*1.003,take_profit:cp-dist*2,reason:`Sweep above Swing High $${rH.toFixed(0)}. Institutions distributed. Price dropping. SELL.`,why_sell:[`Swing High $${rH.toFixed(0)} swept — retail buys triggered`,`Massive ask wall confirms institutional selling`,`Dropping — 3 bearish candles`,`Target: $${pL.toFixed(0)}`]};}
+    if(cp<rL&&sBid&&bouncing){const dist=cp-rL*0.997;return{signal:'BUY',confidence:'HIGH',entry:cp,stop_loss:rL*0.997,take_profit:cp+dist*2,reason:`Sweep below Swing Low $${rL.toFixed(0)}. Institutions grabbed liquidity. Price bouncing. BUY.`,why_buy:[`Swing Low $${rL.toFixed(0)} swept â€” retail SLs triggered`,`Strong bid wall confirms institutional buying`,`Bouncing â€” 3 bullish candles`,`Target: $${pH.toFixed(0)}`]};}
+    if(cp>rH&&sAsk&&dropping){const dist=rH*1.003-cp;return{signal:'SELL',confidence:'HIGH',entry:cp,stop_loss:rH*1.003,take_profit:cp-dist*2,reason:`Sweep above Swing High $${rH.toFixed(0)}. Institutions distributed. Price dropping. SELL.`,why_sell:[`Swing High $${rH.toFixed(0)} swept â€” retail buys triggered`,`Massive ask wall confirms institutional selling`,`Dropping â€” 3 bearish candles`,`Target: $${pL.toFixed(0)}`]};}
     return{signal:'WAIT',confidence:'LOW',entry:null,stop_loss:null,take_profit:null,reason:`No sweep detected. Wait for $${rL.toFixed(0)} sweep (BUY) or $${rH.toFixed(0)} sweep (SELL).`,why_wait:[`No institutional sweep detected yet`,`BUY setup: wait for sweep of $${rL.toFixed(0)}`,`SELL setup: wait for sweep of $${rH.toFixed(0)}`,`Do not trade until institutions move`]};
 }
 function clusterOB(orders,isBid){
@@ -603,11 +603,11 @@ function clusterOB(orders,isBid){
     return clusters.sort((a,b)=>b.volume-a.volume).slice(0,5);
 }
 
-// â”€â”€â”€ WEBSOCKET LIVE DATA (No REST API polling - avoids 418 IP ban) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ WEBSOCKET LIVE DATA (No REST API polling - avoids 418 IP ban) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 // We use Binance WebSocket streams for real-time data instead of polling REST API
 // This is free, unlimited, and will NOT trigger rate limits or IP bans.
 
-// â”€â”€â”€ LIVE ORDER FLOW & RETAIL TRAP TRACKING (WebSockets) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ LIVE ORDER FLOW & RETAIL TRAP TRACKING (WebSockets) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 let liveOrderFlow = {
     whaleWallBid: null, // { price, qty }
     whaleWallAsk: null, // { price, qty }
@@ -617,8 +617,39 @@ let liveOrderFlow = {
     currentPrice: null,
     trapAlert: null, // text alert string
     stopLossZone: null, // text alert string
-    spoofAlert: null // text alert string
+    spoofAlert: null, // text alert string
+    openInterest: 0,
+    prevOpenInterest: 0,
+    oiTrend: 'Flat'
 };
+
+// --- FETCH OPEN INTEREST (FUTURES) ---
+async function fetchOpenInterest() {
+    try {
+        const response = await axios.get('https://fapi.binance.com/fapi/v1/openInterest?symbol=BTCUSDT', { timeout: 3000 });
+        if (response.data && response.data.openInterest) {
+            const currentOI = parseFloat(response.data.openInterest);
+            if (liveOrderFlow.openInterest !== 0) {
+                liveOrderFlow.prevOpenInterest = liveOrderFlow.openInterest;
+                if (currentOI > liveOrderFlow.prevOpenInterest + 5) liveOrderFlow.oiTrend = 'Increasing';
+                else if (currentOI < liveOrderFlow.prevOpenInterest - 5) liveOrderFlow.oiTrend = 'Decreasing';
+                else liveOrderFlow.oiTrend = 'Flat';
+            }
+            liveOrderFlow.openInterest = currentOI;
+        }
+    } catch (err) {}
+}
+setInterval(fetchOpenInterest, 30000); // 30s polling
+setTimeout(fetchOpenInterest, 2000);
+
+// --- KILLZONE DETECTOR ---
+function getKillzone() {
+    const hour = new Date().getUTCHours();
+    if (hour >= 0 && hour < 4) return 'Tokyo / Asian Session (Retail volume & Range bound)';
+    if (hour >= 7 && hour < 10) return 'London Open Killzone (High Manipulation & Judas Swings)';
+    if (hour >= 13 && hour < 16) return 'New York Open Killzone (Trend Establishing Volume)';
+    return 'Dead Zone / Transition (Wait for volume)';
+}
 
 let lastWhaleWallBid = null;
 let lastWhaleWallAsk = null;
@@ -664,9 +695,9 @@ function connectDepthStream(symbol) {
 
             // Spoofing detection
             if (prevBid && !liveOrderFlow.whaleWallBid && liveOrderFlow.currentPrice > prevBid.price) {
-                liveOrderFlow.spoofAlert = `ðŸš¨ Fake Buy Wall Pulled: $${prevBid.price}. Possible Dump incoming!`;
+                liveOrderFlow.spoofAlert = `Ã°Å¸Å¡Â¨ Fake Buy Wall Pulled: $${prevBid.price}. Possible Dump incoming!`;
             } else if (prevAsk && !liveOrderFlow.whaleWallAsk && liveOrderFlow.currentPrice < prevAsk.price) {
-                liveOrderFlow.spoofAlert = `ðŸš¨ Fake Sell Wall Pulled: $${prevAsk.price}. Possible Pump incoming!`;
+                liveOrderFlow.spoofAlert = `Ã°Å¸Å¡Â¨ Fake Sell Wall Pulled: $${prevAsk.price}. Possible Pump incoming!`;
             }
 
             if (totalBidVol > totalAskVol * 1.5 && bids.length > 0) {
@@ -713,9 +744,9 @@ function connectTradeStream(symbol) {
 
             // Trap detection
             if (liveOrderFlow.cvd < -10 && liveOrderFlow.whaleWallBid && price >= liveOrderFlow.whaleWallBid.price) {
-                liveOrderFlow.trapAlert = `ðŸ”´ Retail Trap: Heavy Retail Selling (${Math.abs(liveOrderFlow.cvd).toFixed(2)} BTC), Whale Buy Wall at $${liveOrderFlow.whaleWallBid.price}. Potential PUMP!`;
+                liveOrderFlow.trapAlert = `Ã°Å¸â€Â´ Retail Trap: Heavy Retail Selling (${Math.abs(liveOrderFlow.cvd).toFixed(2)} BTC), Whale Buy Wall at $${liveOrderFlow.whaleWallBid.price}. Potential PUMP!`;
             } else if (liveOrderFlow.cvd > 10 && liveOrderFlow.whaleWallAsk && price <= liveOrderFlow.whaleWallAsk.price) {
-                liveOrderFlow.trapAlert = `ðŸ”´ Retail Trap: Heavy Retail Buying (${liveOrderFlow.cvd.toFixed(2)} BTC), Whale Sell Wall at $${liveOrderFlow.whaleWallAsk.price}. Potential DUMP!`;
+                liveOrderFlow.trapAlert = `Ã°Å¸â€Â´ Retail Trap: Heavy Retail Buying (${liveOrderFlow.cvd.toFixed(2)} BTC), Whale Sell Wall at $${liveOrderFlow.whaleWallAsk.price}. Potential DUMP!`;
             } else {
                 liveOrderFlow.trapAlert = 'No traps detected.';
             }
@@ -802,7 +833,7 @@ setInterval(fetchAndStoreBTCDeepLiquidity, 90000);
 // Delay first call by 30s to let startup settle and reduce 418 risk
 setTimeout(fetchAndStoreBTCDeepLiquidity, 30000);
 
-// â”€â”€â”€ API ROUTES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ API ROUTES Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 // 0. On-Chain Liquidity Proxy (bypasses adblockers)
 app.get('/api/onchain-liquidity', async (req, res) => {
@@ -930,7 +961,7 @@ app.get('/api/btc-radar', async(req, res) => {
     }
 });
 
-// Internal JARVIS AI Engine (Fallback) â€” always reads from live WebSocket data
+// Internal JARVIS AI Engine (Fallback) Ã¢â‚¬â€ always reads from live WebSocket data
 function generateInternalJarvisAnalysis(data) {
     // Always pull latest live data from WebSocket streams
     const price    = liveOrderFlow.currentPrice || data.currentPrice;
@@ -951,7 +982,7 @@ function generateInternalJarvisAnalysis(data) {
         else pdZone = `<span style="color:var(--buy)">Discount Zone (High Risk to Sell)</span>`;
     }
 
-    let html = `<strong>[Internal AI]</strong> ${new Date().toLocaleTimeString()} &mdash; লাইভ মার্কেট অ্যানালাইসিস:<br>`;
+    let html = `<strong>[Internal AI]</strong> ${new Date().toLocaleTimeString()} &mdash; à¦²à¦¾à¦‡à¦­ à¦®à¦¾à¦°à§à¦•à§‡à¦Ÿ à¦…à§à¦¯à¦¾à¦¨à¦¾à¦²à¦¾à¦‡à¦¸à¦¿à¦¸:<br>`;
     html += `&#128336; <strong>Session:</strong> ${getKillzone()}<br><br>`;
     if (price) html += `Price: <strong>$${parseFloat(price).toLocaleString()}</strong> | Zone: ${pdZone}<br>`;
     if (liveOrderFlow.openInterest) {
@@ -961,38 +992,38 @@ function generateInternalJarvisAnalysis(data) {
 
     // Volatility
     if (volatility && volatility.stdDevPct <= 0.15) {
-        html += `<span style="color:#f59e0b">&#9889; Squeeze (${volatility.stdDevPct.toFixed(2)}%) &mdash; বড় Spike আসতে পারে!</span><br>`;
+        html += `<span style="color:#f59e0b">&#9889; Squeeze (${volatility.stdDevPct.toFixed(2)}%) &mdash; à¦¬à§œ Spike à¦†à¦¸à¦¤à§‡ à¦ªà¦¾à¦°à§‡!</span><br>`;
     } else if (volatility && volatility.stdDevPct > 0.40) {
-        html += `<strong>&#128293; High Volatility (${volatility.stdDevPct.toFixed(2)}%)</strong> &mdash; প্রাইস খুব দ্রুত মুভ করছে।<br>`;
+        html += `<strong>&#128293; High Volatility (${volatility.stdDevPct.toFixed(2)}%)</strong> &mdash; à¦ªà§à¦°à¦¾à¦‡à¦¸ à¦–à§à¦¬ à¦¦à§à¦°à§à¦¤ à¦®à§à¦­ à¦•à¦°à¦›à§‡à¥¤<br>`;
     } else if (volatility) {
-        html += `Volatility স্বাভাবিক (${volatility.stdDevPct.toFixed(2)}%).<br>`;
+        html += `Volatility à¦¸à§à¦¬à¦¾à¦­à¦¾à¦¬à¦¿à¦• (${volatility.stdDevPct.toFixed(2)}%).<br>`;
     }
 
     // Whale Walls from WebSocket
-    if (wsBid) html += `&#128011; <span style="color:var(--buy)">Whale Buy Wall: $${wsBid.price.toFixed(2)} (${wsBid.qty.toFixed(2)} BTC) &mdash; ইন্সটিটিউশনাল বাই জোন অ্যাকটিভ।</span><br>`;
-    if (wsAsk) html += `&#128011; <span style="color:var(--sell)">Whale Sell Wall: $${wsAsk.price.toFixed(2)} (${wsAsk.qty.toFixed(2)} BTC) &mdash; ইন্সটিটিউশনাল সেল জোন অ্যাকটিভ।</span><br>`;
+    if (wsBid) html += `&#128011; <span style="color:var(--buy)">Whale Buy Wall: $${wsBid.price.toFixed(2)} (${wsBid.qty.toFixed(2)} BTC) &mdash; à¦‡à¦¨à§à¦¸à¦Ÿà¦¿à¦Ÿà¦¿à¦‰à¦¶à¦¨à¦¾à¦² à¦¬à¦¾à¦‡ à¦œà§‹à¦¨ à¦…à§à¦¯à¦¾à¦•à¦Ÿà¦¿à¦­à¥¤</span><br>`;
+    if (wsAsk) html += `&#128011; <span style="color:var(--sell)">Whale Sell Wall: $${wsAsk.price.toFixed(2)} (${wsAsk.qty.toFixed(2)} BTC) &mdash; à¦‡à¦¨à§à¦¸à¦Ÿà¦¿à¦Ÿà¦¿à¦‰à¦¶à¦¨à¦¾à¦² à¦¸à§‡à¦² à¦œà§‹à¦¨ à¦…à§à¦¯à¦¾à¦•à¦Ÿà¦¿à¦­à¥¤</span><br>`;
     if (wsSpoof) html += `&#128680; <span style="color:var(--sell)">${wsSpoof}</span><br>`;
 
     // Order Book Imbalance
     let isBullishBias = false;
     if (imbalance) {
         if (imbalance.bidRatio > 65) {
-            html += `Order Book: <span style="color:var(--buy)">Extreme Buy Pressure (${imbalance.bidRatio.toFixed(1)}%) &mdash; উপরের দিকে Spike হওয়ার সম্ভাবনা বেশি।</span><br>`;
+            html += `Order Book: <span style="color:var(--buy)">Extreme Buy Pressure (${imbalance.bidRatio.toFixed(1)}%) &mdash; à¦‰à¦ªà¦°à§‡à¦° à¦¦à¦¿à¦•à§‡ Spike à¦¹à¦“à§Ÿà¦¾à¦° à¦¸à¦®à§à¦­à¦¾à¦¬à¦¨à¦¾ à¦¬à§‡à¦¶à¦¿à¥¤</span><br>`;
             isBullishBias = true;
         } else if (imbalance.askRatio > 65) {
-            html += `Order Book: <span style="color:var(--sell)">Extreme Sell Pressure (${imbalance.askRatio.toFixed(1)}%) &mdash; মার্কেট Dump করতে পারে।</span><br>`;
+            html += `Order Book: <span style="color:var(--sell)">Extreme Sell Pressure (${imbalance.askRatio.toFixed(1)}%) &mdash; à¦®à¦¾à¦°à§à¦•à§‡à¦Ÿ Dump à¦•à¦°à¦¤à§‡ à¦ªà¦¾à¦°à§‡à¥¤</span><br>`;
         } else {
-            html += `Order Book: ব্যালেন্সড অবস্থায় আছে।<br>`;
+            html += `Order Book: à¦¬à§à¦¯à¦¾à¦²à§‡à¦¨à§à¦¸à¦¡ à¦…à¦¬à¦¸à§à¦¥à¦¾à§Ÿ à¦†à¦›à§‡à¥¤<br>`;
         }
     }
 
     // CVD from WebSocket
     if (cvdNet > 10) {
-        html += `CVD: <span style="color:var(--buy)">+${cvdNet.toFixed(2)} BTC bought</span> &mdash; স্পট মার্কেটে প্রচুর অ্যাগ্রেসিভ বাইং হচ্ছে।<br>`;
+        html += `CVD: <span style="color:var(--buy)">+${cvdNet.toFixed(2)} BTC bought</span> &mdash; à¦¸à§à¦ªà¦Ÿ à¦®à¦¾à¦°à§à¦•à§‡à¦Ÿà§‡ à¦ªà§à¦°à¦šà§à¦° à¦…à§à¦¯à¦¾à¦—à§à¦°à§‡à¦¸à¦¿à¦­ à¦¬à¦¾à¦‡à¦‚ à¦¹à¦šà§à¦›à§‡à¥¤<br>`;
     } else if (cvdNet < -10) {
-        html += `CVD: <span style="color:var(--sell)">${cvdNet.toFixed(2)} BTC sold</span> &mdash; স্পট মার্কেটে প্রচুর অ্যাগ্রেসিভ সেলিং হচ্ছে।<br>`;
+        html += `CVD: <span style="color:var(--sell)">${cvdNet.toFixed(2)} BTC sold</span> &mdash; à¦¸à§à¦ªà¦Ÿ à¦®à¦¾à¦°à§à¦•à§‡à¦Ÿà§‡ à¦ªà§à¦°à¦šà§à¦° à¦…à§à¦¯à¦¾à¦—à§à¦°à§‡à¦¸à¦¿à¦­ à¦¸à§‡à¦²à¦¿à¦‚ à¦¹à¦šà§à¦›à§‡à¥¤<br>`;
     } else {
-        html += `CVD: নিউট্রাল বা স্বাভাবিক।<br>`;
+        html += `CVD: à¦¨à¦¿à¦‰à¦Ÿà§à¦°à¦¾à¦² à¦¬à¦¾ à¦¸à§à¦¬à¦¾à¦­à¦¾à¦¬à¦¿à¦•à¥¤<br>`;
     }
 
     // Trap Probability
@@ -1004,7 +1035,7 @@ function generateInternalJarvisAnalysis(data) {
         trapProb = 85; trapType = 'FAKE DUMP (Bear Trap)';
         html += `<br>&#9888;&#65039; Sell Pressure + Positive CVD = <span style="color:var(--buy)">${trapType}</span>. Trap Probability: <strong>${trapProb}%</strong><br>`;
     } else {
-        html += `<br>&#9989; কোনো ক্লিয়ার ট্র্যাপ নেই। ${wsSLZone || ''}<br>`;
+        html += `<br>&#9989; à¦•à§‹à¦¨à§‹ à¦•à§à¦²à¦¿à§Ÿà¦¾à¦° à¦Ÿà§à¦°à§à¦¯à¦¾à¦ª à¦¨à§‡à¦‡à¥¤ ${wsSLZone || ''}<br>`;
     }
 
     // Live trap alert from WebSocket
@@ -1031,27 +1062,27 @@ function generateInternalJarvisAnalysis(data) {
 
     // Advanced OI & Premium/Discount integration
     if (fib50 && price > fib50 && liveOrderFlow.oiTrend === 'Decreasing' && cvdNet > 0) {
-        verdict = "মার্কেট Premium Zone-এ আছে কিন্তু Open Interest কমছে! এটি রিয়েল পাম্প নয়, বরং Short Squeeze (ফেক পাম্প)। শর্ট করার জন্য রিজেকশনের অপেক্ষা করুন।";
+        verdict = "à¦®à¦¾à¦°à§à¦•à§‡à¦Ÿ Premium Zone-à¦ à¦†à¦›à§‡ à¦•à¦¿à¦¨à§à¦¤à§ Open Interest à¦•à¦®à¦›à§‡! à¦à¦Ÿà¦¿ à¦°à¦¿à§Ÿà§‡à¦² à¦ªà¦¾à¦®à§à¦ª à¦¨à§Ÿ, à¦¬à¦°à¦‚ Short Squeeze (à¦«à§‡à¦• à¦ªà¦¾à¦®à§à¦ª)à¥¤ à¦¶à¦°à§à¦Ÿ à¦•à¦°à¦¾à¦° à¦œà¦¨à§à¦¯ à¦°à¦¿à¦œà§‡à¦•à¦¶à¦¨à§‡à¦° à¦…à¦ªà§‡à¦•à§à¦·à¦¾ à¦•à¦°à§à¦¨à¥¤";
         verdictColor = "#f59e0b";
         isSqueeze = true;
     } else if (fib50 && price < fib50 && liveOrderFlow.oiTrend === 'Decreasing' && cvdNet < 0) {
-        verdict = "মার্কেট Discount Zone-এ আছে কিন্তু Open Interest কমছে! এটি রিয়েল ডাম্প নয়, বরং Long Liquidation (ফেক ডাম্প)। লং করার জন্য সাপোর্ট বাউন্সের অপেক্ষা করুন।";
+        verdict = "à¦®à¦¾à¦°à§à¦•à§‡à¦Ÿ Discount Zone-à¦ à¦†à¦›à§‡ à¦•à¦¿à¦¨à§à¦¤à§ Open Interest à¦•à¦®à¦›à§‡! à¦à¦Ÿà¦¿ à¦°à¦¿à§Ÿà§‡à¦² à¦¡à¦¾à¦®à§à¦ª à¦¨à§Ÿ, à¦¬à¦°à¦‚ Long Liquidation (à¦«à§‡à¦• à¦¡à¦¾à¦®à§à¦ª)à¥¤ à¦²à¦‚ à¦•à¦°à¦¾à¦° à¦œà¦¨à§à¦¯ à¦¸à¦¾à¦ªà§‹à¦°à§à¦Ÿ à¦¬à¦¾à¦‰à¦¨à§à¦¸à§‡à¦° à¦…à¦ªà§‡à¦•à§à¦·à¦¾ à¦•à¦°à§à¦¨à¥¤";
         verdictColor = "#f59e0b";
         isSqueeze = true;
     } else if (!isSqueeze) {
         if (bullishScore > bearishScore + 1) {
-            verdict = "ইনস্টিটিউশনাল অর্ডার ফ্লো বুলিশ। প্রাইস Discount Zone-এ থাকলে লং (Long) সেটআপ নিতে পারেন।";
+            verdict = "à¦‡à¦¨à¦¸à§à¦Ÿà¦¿à¦Ÿà¦¿à¦‰à¦¶à¦¨à¦¾à¦² à¦…à¦°à§à¦¡à¦¾à¦° à¦«à§à¦²à§‹ à¦¬à§à¦²à¦¿à¦¶à¥¤ à¦ªà§à¦°à¦¾à¦‡à¦¸ Discount Zone-à¦ à¦¥à¦¾à¦•à¦²à§‡ à¦²à¦‚ (Long) à¦¸à§‡à¦Ÿà¦†à¦ª à¦¨à¦¿à¦¤à§‡ à¦ªà¦¾à¦°à§‡à¦¨à¥¤";
             verdictColor = "var(--buy)";
         } else if (bearishScore > bullishScore + 1) {
-            verdict = "ইনস্টিটিউশনাল অর্ডার ফ্লো বিয়ারিশ। প্রাইস Premium Zone-এ থাকলে শর্ট (Short) সেটআপ নিতে পারেন।";
+            verdict = "à¦‡à¦¨à¦¸à§à¦Ÿà¦¿à¦Ÿà¦¿à¦‰à¦¶à¦¨à¦¾à¦² à¦…à¦°à§à¦¡à¦¾à¦° à¦«à§à¦²à§‹ à¦¬à¦¿à§Ÿà¦¾à¦°à¦¿à¦¶à¥¤ à¦ªà§à¦°à¦¾à¦‡à¦¸ Premium Zone-à¦ à¦¥à¦¾à¦•à¦²à§‡ à¦¶à¦°à§à¦Ÿ (Short) à¦¸à§‡à¦Ÿà¦†à¦ª à¦¨à¦¿à¦¤à§‡ à¦ªà¦¾à¦°à§‡à¦¨à¥¤";
             verdictColor = "var(--sell)";
         } else {
-            verdict = "মার্কেট সাইডওয়েজ বা কনফিউজিং। কোনো ক্লিয়ার ডাইরেকশন নেই, ট্রেড থেকে দূরে থাকুন।";
+            verdict = "à¦®à¦¾à¦°à§à¦•à§‡à¦Ÿ à¦¸à¦¾à¦‡à¦¡à¦“à§Ÿà§‡à¦œ à¦¬à¦¾ à¦•à¦¨à¦«à¦¿à¦‰à¦œà¦¿à¦‚à¥¤ à¦•à§‹à¦¨à§‹ à¦•à§à¦²à¦¿à§Ÿà¦¾à¦° à¦¡à¦¾à¦‡à¦°à§‡à¦•à¦¶à¦¨ à¦¨à§‡à¦‡, à¦Ÿà§à¦°à§‡à¦¡ à¦¥à§‡à¦•à§‡ à¦¦à§‚à¦°à§‡ à¦¥à¦¾à¦•à§à¦¨à¥¤";
             verdictColor = "#9ca3af";
         }
     }
     
-    html += `<br><hr style="border-color:#334155; margin:10px 0;"><strong style="font-size:1.1em;">&#128161; চূড়ান্ত সিদ্ধান্ত (Verdict):</strong> <span style="color:${verdictColor}; font-weight:bold;">${verdict}</span><br>`;
+    html += `<br><hr style="border-color:#334155; margin:10px 0;"><strong style="font-size:1.1em;">&#128161; à¦šà§‚à§œà¦¾à¦¨à§à¦¤ à¦¸à¦¿à¦¦à§à¦§à¦¾à¦¨à§à¦¤ (Verdict):</strong> <span style="color:${verdictColor}; font-weight:bold;">${verdict}</span><br>`;
 
     return html;
 }
@@ -1088,7 +1119,7 @@ CRITICAL RULES:
 3. DIVERGENCE RULES: If Price is at resistance but CVD is highly negative, it's a FAKE PUMP (Trap). If Price is at support but CVD is positive, it's a FAKE DUMP (Trap).
 4. MULTI-TIMEFRAME ANALYSIS (MTFA): Compare the 15m (micro) spoofing vs 1h/4h (macro) spoofing to detect larger institutional trends.
 5. Provide a "Trap Probability Score" (e.g. Trap Probability: 85%) based on the ratio of Fake walls and CVD divergence.
-6. Reply entirely in Bengali (à¦¬à¦¾à¦‚à¦²à¦¾) with a sharp, professional tone.
+6. Reply entirely in Bengali (Ã Â¦Â¬Ã Â¦Â¾Ã Â¦â€šÃ Â¦Â²Ã Â¦Â¾) with a sharp, professional tone.
 7. Output valid HTML using <strong> and <span style="color:var(--buy)"> for bullish/support or <span style="color:var(--sell)"> for bearish/resistance. No markdown backticks.
 8. Keep it concise (4-5 sentences max).
 
@@ -1180,7 +1211,7 @@ CRITICAL RULES:
 3. DIVERGENCE RULES: If Price goes UP to resistance but CVD is NEGATIVE, it's a FAKE PUMP (Trap). If Price goes DOWN to support but CVD is POSITIVE, it's a FAKE DUMP (Trap).
 4. MULTI-TIMEFRAME ANALYSIS: Compare the 15m (micro) spoofing vs 1h/4h (macro) spoofing to detect larger trends.
 5. Provide a "Trap Probability Score" (e.g. Trap Probability: 85%).
-6. Reply entirely in Bengali (à¦¬à¦¾à¦‚à¦²à¦¾).
+6. Reply entirely in Bengali (Ã Â¦Â¬Ã Â¦Â¾Ã Â¦â€šÃ Â¦Â²Ã Â¦Â¾).
 7. Output valid HTML (e.g. <strong>, <span style="color:var(--buy)">). No markdown backticks.
 
 LIVE MARKET DATA:
@@ -1233,7 +1264,7 @@ Based on this raw live context, answer the user's prompt as a pro order flow tra
             console.log("Falling back to Internal JARVIS Chat Engine...");
             const lastMsg = history && history.length > 0 ? history[history.length - 1].parts[0].text : '';
             const internalHtml = generateInternalJarvisAnalysis(req.body);
-            const chatHtml = `<strong>[Internal AI]</strong> à¦†à¦®à¦¿ à¦†à¦ªà¦¨à¦¾à¦° à¦ªà§à¦°à¦¶à§à¦¨ ("${lastMsg}") à¦¬à§à¦à¦¤à§‡ à¦ªà§‡à¦°à§‡à¦›à¦¿, à¦•à¦¿à¦¨à§à¦¤à§ API à¦²à¦¿à¦®à¦¿à¦Ÿ à¦¶à§‡à¦· à¦¹à¦“à§Ÿà¦¾à§Ÿ à¦¬à¦¿à¦¸à§à¦¤à¦¾à¦°à¦¿à¦¤ à¦‰à¦¤à§à¦¤à¦° à¦¦à¦¿à¦¤à§‡ à¦ªà¦¾à¦°à¦›à¦¿ à¦¨à¦¾à¥¤ à¦¤à¦¬à§‡ à¦¬à¦°à§à¦¤à¦®à¦¾à¦¨ à¦®à¦¾à¦°à§à¦•à§‡à¦Ÿà§‡à¦° à¦…à¦¬à¦¸à§à¦¥à¦¾ à¦¹à¦²à§‹:<br><br>${internalHtml}`;
+            const chatHtml = `<strong>[Internal AI]</strong> Ã Â¦â€ Ã Â¦Â®Ã Â¦Â¿ Ã Â¦â€ Ã Â¦ÂªÃ Â¦Â¨Ã Â¦Â¾Ã Â¦Â° Ã Â¦ÂªÃ Â§ÂÃ Â¦Â°Ã Â¦Â¶Ã Â§ÂÃ Â¦Â¨ ("${lastMsg}") Ã Â¦Â¬Ã Â§ÂÃ Â¦ÂÃ Â¦Â¤Ã Â§â€¡ Ã Â¦ÂªÃ Â§â€¡Ã Â¦Â°Ã Â§â€¡Ã Â¦â€ºÃ Â¦Â¿, Ã Â¦â€¢Ã Â¦Â¿Ã Â¦Â¨Ã Â§ÂÃ Â¦Â¤Ã Â§Â API Ã Â¦Â²Ã Â¦Â¿Ã Â¦Â®Ã Â¦Â¿Ã Â¦Å¸ Ã Â¦Â¶Ã Â§â€¡Ã Â¦Â· Ã Â¦Â¹Ã Â¦â€œÃ Â§Å¸Ã Â¦Â¾Ã Â§Å¸ Ã Â¦Â¬Ã Â¦Â¿Ã Â¦Â¸Ã Â§ÂÃ Â¦Â¤Ã Â¦Â¾Ã Â¦Â°Ã Â¦Â¿Ã Â¦Â¤ Ã Â¦â€°Ã Â¦Â¤Ã Â§ÂÃ Â¦Â¤Ã Â¦Â° Ã Â¦Â¦Ã Â¦Â¿Ã Â¦Â¤Ã Â§â€¡ Ã Â¦ÂªÃ Â¦Â¾Ã Â¦Â°Ã Â¦â€ºÃ Â¦Â¿ Ã Â¦Â¨Ã Â¦Â¾Ã Â¥Â¤ Ã Â¦Â¤Ã Â¦Â¬Ã Â§â€¡ Ã Â¦Â¬Ã Â¦Â°Ã Â§ÂÃ Â¦Â¤Ã Â¦Â®Ã Â¦Â¾Ã Â¦Â¨ Ã Â¦Â®Ã Â¦Â¾Ã Â¦Â°Ã Â§ÂÃ Â¦â€¢Ã Â§â€¡Ã Â¦Å¸Ã Â§â€¡Ã Â¦Â° Ã Â¦â€¦Ã Â¦Â¬Ã Â¦Â¸Ã Â§ÂÃ Â¦Â¥Ã Â¦Â¾ Ã Â¦Â¹Ã Â¦Â²Ã Â§â€¹:<br><br>${internalHtml}`;
             res.json({ success: true, text: chatHtml, internal: true });
         }
         
@@ -1241,7 +1272,7 @@ Based on this raw live context, answer the user's prompt as a pro order flow tra
         console.error("JARVIS Chat Error:", err);
         const lastMsg = req.body.history && req.body.history.length > 0 ? req.body.history[req.body.history.length - 1].parts[0].text : '';
         const internalHtml = generateInternalJarvisAnalysis(req.body);
-        const chatHtml = `<strong>[Internal AI]</strong> API Error! à¦¤à¦¬à§‡ à¦¬à¦°à§à¦¤à¦®à¦¾à¦¨ à¦®à¦¾à¦°à§à¦•à§‡à¦Ÿà§‡à¦° à¦…à¦¬à¦¸à§à¦¥à¦¾ à¦¹à¦²à§‹:<br><br>${internalHtml}`;
+        const chatHtml = `<strong>[Internal AI]</strong> API Error! Ã Â¦Â¤Ã Â¦Â¬Ã Â§â€¡ Ã Â¦Â¬Ã Â¦Â°Ã Â§ÂÃ Â¦Â¤Ã Â¦Â®Ã Â¦Â¾Ã Â¦Â¨ Ã Â¦Â®Ã Â¦Â¾Ã Â¦Â°Ã Â§ÂÃ Â¦â€¢Ã Â§â€¡Ã Â¦Å¸Ã Â§â€¡Ã Â¦Â° Ã Â¦â€¦Ã Â¦Â¬Ã Â¦Â¸Ã Â§ÂÃ Â¦Â¥Ã Â¦Â¾ Ã Â¦Â¹Ã Â¦Â²Ã Â§â€¹:<br><br>${internalHtml}`;
         res.json({ success: true, text: chatHtml, internal: true });
     }
 });
@@ -1274,8 +1305,8 @@ app.get('/api/liquidity', async(req,res)=>{
         const ctx = detectContext(formattedCandles, formattedCandles.length - 1);
         
         const rH=swingHighs[swingHighs.length-1]?.price, rL=swingLows[swingLows.length-1]?.price;
-        if(rH&&cp>rH) await dbRun(`INSERT INTO liquidity_history (symbol,type,price,description) VALUES (?,?,?,?)`,[SYMBOL,'BUY_SIDE_SWEEP',cp,`Swept above $${rH.toFixed(0)} â€” distribution possible.`]);
-        if(rL&&cp<rL) await dbRun(`INSERT INTO liquidity_history (symbol,type,price,description) VALUES (?,?,?,?)`,[SYMBOL,'SELL_SIDE_SWEEP',cp,`Swept below $${rL.toFixed(0)} â€” accumulation possible.`]);
+        if(rH&&cp>rH) await dbRun(`INSERT INTO liquidity_history (symbol,type,price,description) VALUES (?,?,?,?)`,[SYMBOL,'BUY_SIDE_SWEEP',cp,`Swept above $${rH.toFixed(0)} Ã¢â‚¬â€ distribution possible.`]);
+        if(rL&&cp<rL) await dbRun(`INSERT INTO liquidity_history (symbol,type,price,description) VALUES (?,?,?,?)`,[SYMBOL,'SELL_SIDE_SWEEP',cp,`Swept below $${rL.toFixed(0)} Ã¢â‚¬â€ accumulation possible.`]);
         if(signal?.signal!=='WAIT'&&signal?.entry) await dbRun(`INSERT INTO signals (symbol,signal,confidence,entry,stop_loss,take_profit,reason) VALUES (?,?,?,?,?,?,?)`,[SYMBOL,signal.signal,signal.confidence,signal.entry,signal.stop_loss,signal.take_profit,signal.reason]);
         const[history,sigHist,obHist]=await Promise.all([
             dbAll(`SELECT * FROM liquidity_history ORDER BY id DESC LIMIT 10`),
@@ -1394,7 +1425,7 @@ app.get('/api/replay/range', async(req,res)=>{
     }catch(e){res.status(500).json({error:e.message});}
 });
 
-// â”€â”€â”€ BRAIN TRADING ENGINE (Self-Learning) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ BRAIN TRADING ENGINE (Self-Learning) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 async function analyzeFailedTrade(trade) {
     // 1. Fetch candles around the trade execution to see WHY it failed
@@ -1521,7 +1552,7 @@ async function runBrainTrader() {
                             VALUES (?, ?, ?, ?, ?, ?, ?, 'OPEN', ?)`,
                             [symbol, tf, strat, ctx, entry, sl, tp, liveTime]);
                     console.log(`[Brain] Opened new paper trade: ${strat} ${isBuy?'LONG':'SHORT'}`);
-                    addBrainLog(`ðŸ’¡ Setup Found: ${strat} (${isBuy?'LONG':'SHORT'}). Opened Paper Trade!`);
+                    addBrainLog(`Ã°Å¸â€™Â¡ Setup Found: ${strat} (${isBuy?'LONG':'SHORT'}). Opened Paper Trade!`);
                 } else {
                     addBrainLog("Setup found, but another trade is already OPEN.");
                 }
@@ -1586,10 +1617,10 @@ async function pollBinanceOrderFlow() {
         
         // Spoofing detection
         if (lastWhaleWallBid && !liveOrderFlow.whaleWallBid && liveOrderFlow.currentPrice > lastWhaleWallBid.price) {
-            liveOrderFlow.spoofAlert = `ðŸš¨ Fake Buy Wall Pulled: $${lastWhaleWallBid.price}. Possible Dump incoming!`;
+            liveOrderFlow.spoofAlert = `Ã°Å¸Å¡Â¨ Fake Buy Wall Pulled: $${lastWhaleWallBid.price}. Possible Dump incoming!`;
         }
         if (lastWhaleWallAsk && !liveOrderFlow.whaleWallAsk && liveOrderFlow.currentPrice < lastWhaleWallAsk.price) {
-            liveOrderFlow.spoofAlert = `ðŸš¨ Fake Sell Wall Pulled: $${lastWhaleWallAsk.price}. Possible Pump incoming!`;
+            liveOrderFlow.spoofAlert = `Ã°Å¸Å¡Â¨ Fake Sell Wall Pulled: $${lastWhaleWallAsk.price}. Possible Pump incoming!`;
         }
         lastWhaleWallBid = liveOrderFlow.whaleWallBid;
         lastWhaleWallAsk = liveOrderFlow.whaleWallAsk;
@@ -1633,9 +1664,9 @@ async function pollBinanceOrderFlow() {
             
             // Trap Detection
             if (liveOrderFlow.cvd < -10 && liveOrderFlow.whaleWallBid && liveOrderFlow.currentPrice >= liveOrderFlow.whaleWallBid.price) {
-                liveOrderFlow.trapAlert = `ðŸ”´ Retail Trap Detected: Heavy Retail Selling (${Math.abs(liveOrderFlow.cvd).toFixed(2)} BTC), but Whale Buy Wall holding at $${liveOrderFlow.whaleWallBid.price}. Potential Reversal UP!`;
+                liveOrderFlow.trapAlert = `Ã°Å¸â€Â´ Retail Trap Detected: Heavy Retail Selling (${Math.abs(liveOrderFlow.cvd).toFixed(2)} BTC), but Whale Buy Wall holding at $${liveOrderFlow.whaleWallBid.price}. Potential Reversal UP!`;
             } else if (liveOrderFlow.cvd > 10 && liveOrderFlow.whaleWallAsk && liveOrderFlow.currentPrice <= liveOrderFlow.whaleWallAsk.price) {
-                liveOrderFlow.trapAlert = `ðŸ”´ Retail Trap Detected: Heavy Retail Buying (${liveOrderFlow.cvd.toFixed(2)} BTC), but Whale Sell Wall holding at $${liveOrderFlow.whaleWallAsk.price}. Potential Reversal DOWN!`;
+                liveOrderFlow.trapAlert = `Ã°Å¸â€Â´ Retail Trap Detected: Heavy Retail Buying (${liveOrderFlow.cvd.toFixed(2)} BTC), but Whale Sell Wall holding at $${liveOrderFlow.whaleWallAsk.price}. Potential Reversal DOWN!`;
             } else {
                 liveOrderFlow.trapAlert = "No traps detected.";
             }
@@ -1680,3 +1711,4 @@ app.get('/api/orderflow', (req, res) => {
 });
 
 app.listen(PORT, () => console.log(`[SERVER] Alpha-Flow SMC Brain v4 running on port ${PORT}`));
+
