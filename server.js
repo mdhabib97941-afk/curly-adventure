@@ -740,22 +740,30 @@ app.post('/api/jarvis-ai', async (req, res) => {
             return res.status(400).json({ error: "GEMINI_API_KEY environment variable is not set." });
         }
         
-        const { stats, tf, currentPrice, cvdData } = req.body;
+        const { stats, tf, currentPrice, cvdData, swingHighs, swingLows, instZones, signal } = req.body;
         
-        const prompt = `You are JARVIS, an expert algorithmic crypto order flow analyst. 
-Analyze the following live Bitcoin (BTC) order flow and spoofing data. 
-Explain if market makers are trying to trap retail traders, and what the likely market direction is (UP or DOWN or NEUTRAL). 
-Explain it exactly in Bengali (বাংলা). Use a professional yet helpful tone, like you are advising me. 
-Provide the output in valid HTML format using <strong>, <span> with styles (e.g. color:var(--buy) for bullish, color:var(--sell) for bearish), <br>, etc., so it renders nicely in a dashboard. 
-Keep it concise, about 4-6 sentences. Do not use Markdown backticks around the HTML, just output raw HTML.
+        const support = swingLows && swingLows.length > 0 ? swingLows[swingLows.length-1].price.toFixed(2) : 'N/A';
+        const resistance = swingHighs && swingHighs.length > 0 ? swingHighs[swingHighs.length-1].price.toFixed(2) : 'N/A';
+        const liqPools = instZones && instZones.length > 0 ? instZones.map(z => `$${z.price.toFixed(2)} (${z.type})`).join(', ') : 'None detected';
+        
+        const prompt = `You are JARVIS, an expert, aggressive, and highly analytical crypto algorithmic trader.
+CRITICAL RULES:
+- DO NOT act like a textbook. Do not define what volume, chart patterns, or liquidity hunts are. I already know.
+- Only analyze the CURRENT data provided below.
+- Reply entirely in Bengali (বাংলা) with a sharp, professional tone.
+- Output valid HTML using <strong> and <span style="color:var(--buy)"> for bullish/support or <span style="color:var(--sell)"> for bearish/resistance. No markdown backticks.
+- Keep it concise (3-4 sentences max).
 
-Live Data Context:
-Timeframe: ${tf}
-Current Price: $${currentPrice}
-Buy Walls (Bids): Total $${(stats.totalBids/1000000).toFixed(1)}M (Real: ${(stats.realBids/1000000).toFixed(1)}M, Fake/Spoofed: ${(stats.fakeBids/1000000).toFixed(1)}M)
-Sell Walls (Asks): Total $${(stats.totalAsks/1000000).toFixed(1)}M (Real: ${(stats.realAsks/1000000).toFixed(1)}M, Fake/Spoofed: ${(stats.fakeAsks/1000000).toFixed(1)}M)
-Net Market Buy/Sell Orders (CVD): ${cvdData ? (cvdData.netCvd > 0 ? '+'+cvdData.netCvd.toFixed(2)+' BTC Bought' : cvdData.netCvd.toFixed(2)+' BTC Sold') : 'N/A'}
-`;
+LIVE MARKET DATA:
+Timeframe: ${tf} | Current Price: $${currentPrice}
+SMC Signal: ${signal ? signal.type + ' (' + signal.reason + ')' : 'Neutral'}
+Immediate Resistance: $${resistance} | Immediate Support: $${support}
+Institutional Liquidity Pools: ${liqPools}
+Buy Walls: $${(stats.totalBids/1000000).toFixed(1)}M (Real: ${(stats.realBids/1000000).toFixed(1)}M, Fake: ${(stats.fakeBids/1000000).toFixed(1)}M)
+Sell Walls: $${(stats.totalAsks/1000000).toFixed(1)}M (Real: ${(stats.realAsks/1000000).toFixed(1)}M, Fake: ${(stats.fakeAsks/1000000).toFixed(1)}M)
+CVD (Net Orders): ${cvdData ? (cvdData.netCvd > 0 ? '+'+cvdData.netCvd.toFixed(2)+' BTC Bought' : cvdData.netCvd.toFixed(2)+' BTC Sold') : 'N/A'}
+
+Based on this data, identify if there is a trap, where the price is likely heading (to which liquidity pool/support/resistance), and give a clear directional bias.`;
 
         const models = [
             'gemini-2.5-flash',
@@ -804,22 +812,29 @@ app.post('/api/jarvis-chat', async (req, res) => {
         const apiKey = process.env.GEMINI_API_KEY;
         if (!apiKey) return res.status(400).json({ error: "GEMINI_API_KEY is not set." });
         
-        const { history, stats, tf, currentPrice, cvdData } = req.body;
+        const { history, stats, tf, currentPrice, cvdData, swingHighs, swingLows, instZones, signal } = req.body;
         
-        const systemPrompt = `You are JARVIS, an expert algorithmic crypto order flow analyst.
-You must always reply in Bengali (বাংলা) in a professional, helpful, and expert trading tone.
-Use valid HTML format using <strong>, <span> with colors (e.g. style="color:var(--buy)" for bullish/good, style="color:var(--sell)" for bearish/bad), <br>, etc., so it renders nicely in a chat bubble.
-Do not use Markdown backticks around the HTML, just output raw HTML.
-Keep your answers concise and directly address the user's question.
+        const support = swingLows && swingLows.length > 0 ? swingLows[swingLows.length-1].price.toFixed(2) : 'N/A';
+        const resistance = swingHighs && swingHighs.length > 0 ? swingHighs[swingHighs.length-1].price.toFixed(2) : 'N/A';
+        const liqPools = instZones && instZones.length > 0 ? instZones.map(z => `$${z.price.toFixed(2)} (${z.type})`).join(', ') : 'None detected';
+        
+        const systemPrompt = `You are JARVIS, an elite algorithmic crypto order flow analyst.
+CRITICAL RULES:
+1. DO NOT act like a textbook or wiki. Never define basic trading concepts (like what a flag pattern is, what volume means, etc.).
+2. You have ALL the necessary data. Use the Live Market Data provided below to answer the user's questions directly and sharply.
+3. Reply entirely in Bengali (বাংলা).
+4. Output valid HTML (e.g. <strong>, <span style="color:var(--buy)">). No markdown backticks.
 
-CURRENT LIVE MARKET DATA CONTEXT:
-Timeframe: ${tf}
-Current Price: $${currentPrice}
-Buy Walls (Bids): Total $${(stats.totalBids/1000000).toFixed(1)}M (Real: ${(stats.realBids/1000000).toFixed(1)}M, Fake/Spoofed: ${(stats.fakeBids/1000000).toFixed(1)}M)
-Sell Walls (Asks): Total $${(stats.totalAsks/1000000).toFixed(1)}M (Real: ${(stats.realAsks/1000000).toFixed(1)}M, Fake/Spoofed: ${(stats.fakeAsks/1000000).toFixed(1)}M)
-Net Market Orders (CVD): ${cvdData ? (cvdData.netCvd > 0 ? '+'+cvdData.netCvd.toFixed(2)+' BTC Bought' : cvdData.netCvd.toFixed(2)+' BTC Sold') : 'N/A'}
+LIVE MARKET DATA:
+Timeframe: ${tf} | Price: $${currentPrice}
+SMC Signal: ${signal ? signal.type + ' (' + signal.reason + ')' : 'Neutral'}
+Support: $${support} | Resistance: $${resistance}
+Liquidity Pools: ${liqPools}
+Buy Walls: $${(stats.totalBids/1000000).toFixed(1)}M (Real: ${(stats.realBids/1000000).toFixed(1)}M, Fake: ${(stats.fakeBids/1000000).toFixed(1)}M)
+Sell Walls: $${(stats.totalAsks/1000000).toFixed(1)}M (Real: ${(stats.realAsks/1000000).toFixed(1)}M, Fake: ${(stats.fakeAsks/1000000).toFixed(1)}M)
+CVD (Net Orders): ${cvdData ? (cvdData.netCvd > 0 ? '+'+cvdData.netCvd.toFixed(2)+' BTC Bought' : cvdData.netCvd.toFixed(2)+' BTC Sold') : 'N/A'}
 
-Based on this data, answer the user's question. Identify traps and spoofing if relevant.`;
+Based on this live context, answer the user's prompt as a pro trader.`;
 
         const models = [
             'gemini-2.5-flash',
