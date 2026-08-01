@@ -383,6 +383,8 @@
                 <button class="btn-micro" onclick="renderSpoofStats('5m')" id="btnSpoof5m" style="padding:4px 8px; font-size:0.75rem; background:var(--bg); border-radius:4px; cursor:pointer; color:#fff; border:1px solid var(--border);">5m</button>
                 <button class="btn-micro" onclick="renderSpoofStats('15m')" id="btnSpoof15m" style="padding:4px 8px; font-size:0.75rem; background:var(--blue); border-radius:4px; cursor:pointer; color:#fff; border:1px solid var(--border);">15m</button>
                 <button class="btn-micro" onclick="renderSpoofStats('1h')" id="btnSpoof1h" style="padding:4px 8px; font-size:0.75rem; background:var(--bg); border-radius:4px; cursor:pointer; color:#fff; border:1px solid var(--border);">1h</button>
+                <button class="btn-micro" onclick="renderSpoofStats('4h')" id="btnSpoof4h" style="padding:4px 8px; font-size:0.75rem; background:var(--bg); border-radius:4px; cursor:pointer; color:#fff; border:1px solid var(--border);">4h</button>
+                <button class="btn-micro" onclick="renderSpoofStats('24h')" id="btnSpoof24h" style="padding:4px 8px; font-size:0.75rem; background:var(--bg); border-radius:4px; cursor:pointer; color:#fff; border:1px solid var(--border);">24h</button>
             </div>
         </div>
         <div class="card-body" style="padding:16px; display:flex; flex-direction:column; gap:16px;" id="spoofStatsContainer">
@@ -863,7 +865,7 @@ function renderSpoofStats(tf) {
     if(!globalSpoofStats) return;
     currentSpoofTf = tf;
     
-    ['btnSpoof5m', 'btnSpoof15m', 'btnSpoof1h'].forEach(id => {
+    ['btnSpoof5m', 'btnSpoof15m', 'btnSpoof1h', 'btnSpoof4h', 'btnSpoof24h'].forEach(id => {
         const el = document.getElementById(id);
         if(el) el.style.background = 'var(--bg)';
     });
