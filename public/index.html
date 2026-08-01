@@ -972,10 +972,12 @@ async function updateJarvisAnalysis(stats, tf) {
         } else {
             outputEl.innerHTML = `<span style="color:var(--sell)">AI Error: ${data.error}</span>`;
             timeEl.innerText = `Analysis failed`;
+            lastJarvisFetchTime = Date.now(); // update time to prevent spamming
         }
     } catch(err) {
         outputEl.innerHTML = `<span style="color:var(--sell)">Failed to connect to J.A.R.V.I.S server.</span>`;
         timeEl.innerText = `Analysis failed`;
+        lastJarvisFetchTime = Date.now(); // update time to prevent spamming
         console.error(err);
     }
 }
