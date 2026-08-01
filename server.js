@@ -944,43 +944,43 @@ function generateInternalJarvisAnalysis(data) {
     const support    = swingLows  && swingLows.length  > 0 ? swingLows[swingLows.length-1].price.toFixed(2)  : 'N/A';
     const resistance = swingHighs && swingHighs.length > 0 ? swingHighs[swingHighs.length-1].price.toFixed(2) : 'N/A';
 
-    let html = `<strong>[Internal AI]</strong> ${new Date().toLocaleTimeString()} &mdash; Live Market Analysis:<br><br>`;
+    let html = `<strong>[Internal AI]</strong> ${new Date().toLocaleTimeString()} &mdash; লাইভ মার্কেট অ্যানালাইসিস:<br><br>`;
     if (price) html += `Price: <strong>$${parseFloat(price).toLocaleString()}</strong> | Support: <strong>$${support}</strong> | Resistance: <strong>$${resistance}</strong><br>`;
 
     // Volatility
     if (volatility && volatility.stdDevPct <= 0.15) {
-        html += `<span style="color:#f59e0b">&#9889; Squeeze (${volatility.stdDevPct.toFixed(2)}%) &mdash; Big Spike incoming!</span><br>`;
+        html += `<span style="color:#f59e0b">&#9889; Squeeze (${volatility.stdDevPct.toFixed(2)}%) &mdash; বড় Spike আসতে পারে!</span><br>`;
     } else if (volatility && volatility.stdDevPct > 0.40) {
-        html += `<strong>&#128293; High Volatility (${volatility.stdDevPct.toFixed(2)}%)</strong> &mdash; Price moving fast.<br>`;
+        html += `<strong>&#128293; High Volatility (${volatility.stdDevPct.toFixed(2)}%)</strong> &mdash; প্রাইস খুব দ্রুত মুভ করছে।<br>`;
     } else if (volatility) {
-        html += `Volatility Normal (${volatility.stdDevPct.toFixed(2)}%).<br>`;
+        html += `Volatility স্বাভাবিক (${volatility.stdDevPct.toFixed(2)}%).<br>`;
     }
 
     // Whale Walls from WebSocket
-    if (wsBid) html += `&#128011; <span style="color:var(--buy)">Whale Buy Wall: $${wsBid.price.toFixed(2)} (${wsBid.qty.toFixed(2)} BTC) &mdash; Institutional buy zone active.</span><br>`;
-    if (wsAsk) html += `&#128011; <span style="color:var(--sell)">Whale Sell Wall: $${wsAsk.price.toFixed(2)} (${wsAsk.qty.toFixed(2)} BTC) &mdash; Institutional sell zone active.</span><br>`;
+    if (wsBid) html += `&#128011; <span style="color:var(--buy)">Whale Buy Wall: $${wsBid.price.toFixed(2)} (${wsBid.qty.toFixed(2)} BTC) &mdash; ইন্সটিটিউশনাল বাই জোন অ্যাকটিভ।</span><br>`;
+    if (wsAsk) html += `&#128011; <span style="color:var(--sell)">Whale Sell Wall: $${wsAsk.price.toFixed(2)} (${wsAsk.qty.toFixed(2)} BTC) &mdash; ইন্সটিটিউশনাল সেল জোন অ্যাকটিভ।</span><br>`;
     if (wsSpoof) html += `&#128680; <span style="color:var(--sell)">${wsSpoof}</span><br>`;
 
     // Order Book Imbalance
     let isBullishBias = false;
     if (imbalance) {
         if (imbalance.bidRatio > 65) {
-            html += `Order Book: <span style="color:var(--buy)">Extreme Buy Pressure (${imbalance.bidRatio.toFixed(1)}%) &mdash; Spike likely UP.</span><br>`;
+            html += `Order Book: <span style="color:var(--buy)">Extreme Buy Pressure (${imbalance.bidRatio.toFixed(1)}%) &mdash; উপরের দিকে Spike হওয়ার সম্ভাবনা বেশি।</span><br>`;
             isBullishBias = true;
         } else if (imbalance.askRatio > 65) {
-            html += `Order Book: <span style="color:var(--sell)">Extreme Sell Pressure (${imbalance.askRatio.toFixed(1)}%) &mdash; Dump likely.</span><br>`;
+            html += `Order Book: <span style="color:var(--sell)">Extreme Sell Pressure (${imbalance.askRatio.toFixed(1)}%) &mdash; মার্কেট Dump করতে পারে।</span><br>`;
         } else {
-            html += `Order Book: Balanced. No clear directional bias.<br>`;
+            html += `Order Book: ব্যালেন্সড অবস্থায় আছে।<br>`;
         }
     }
 
     // CVD from WebSocket
     if (cvdNet > 10) {
-        html += `CVD: <span style="color:var(--buy)">+${cvdNet.toFixed(2)} BTC bought</span> &mdash; Aggressive buying pressure.<br>`;
+        html += `CVD: <span style="color:var(--buy)">+${cvdNet.toFixed(2)} BTC bought</span> &mdash; স্পট মার্কেটে প্রচুর অ্যাগ্রেসিভ বাইং হচ্ছে।<br>`;
     } else if (cvdNet < -10) {
-        html += `CVD: <span style="color:var(--sell)">${cvdNet.toFixed(2)} BTC sold</span> &mdash; Aggressive selling pressure.<br>`;
+        html += `CVD: <span style="color:var(--sell)">${cvdNet.toFixed(2)} BTC sold</span> &mdash; স্পট মার্কেটে প্রচুর অ্যাগ্রেসিভ সেলিং হচ্ছে।<br>`;
     } else {
-        html += `CVD: Neutral.<br>`;
+        html += `CVD: নিউট্রাল বা স্বাভাবিক।<br>`;
     }
 
     // Trap Probability
@@ -992,7 +992,7 @@ function generateInternalJarvisAnalysis(data) {
         trapProb = 85; trapType = 'FAKE DUMP (Bear Trap)';
         html += `<br>&#9888;&#65039; Sell Pressure + Positive CVD = <span style="color:var(--buy)">${trapType}</span>. Trap Probability: <strong>${trapProb}%</strong><br>`;
     } else {
-        html += `<br>&#9989; No clear trap detected. ${wsSLZone || ''}<br>`;
+        html += `<br>&#9989; কোনো ক্লিয়ার ট্র্যাপ নেই। ${wsSLZone || ''}<br>`;
     }
 
     // Live trap alert from WebSocket
