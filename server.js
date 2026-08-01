@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import axios from 'axios';
 import sqlite3 from 'sqlite3';
+import mongoose from 'mongoose';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import WebSocket from 'ws';
@@ -52,8 +53,31 @@ const BASE   = 'https://data-api.binance.vision';
 // Timeframe intervals in milliseconds
 const TF_MS = { '5m': 300000, '15m': 900000, '1h': 3600000, '4h': 14400000, '1d': 86400000 };
 
-// ─── DATABASE ──────────────────────────────────────────────────────────────────
+// ── DATABASE (SQLite for temporary, MongoDB for persistent) ────────
 const db = new sqlite3.Database(path.join(__dirname, 'database.sqlite'));
+
+// --- MongoDB Setup ---
+const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://user:pass@cluster.mongodb.net/alphaflow';
+mongoose.connect(MONGO_URI)
+    .then(() => console.log('✅ Connected to MongoDB (Persistent Storage)'))
+    .catch(err => console.error('❌ MongoDB connection error (Check your MONGO_URI):', err));
+
+const OrderbookSnapshot = mongoose.model('OrderbookSnapshot', new mongoose.Schema({
+    timestamp: { type: Date, default: Date.now },
+    symbol: String,
+    bid_price: Number, bid_volume: Number,
+    ask_price: Number, ask_volume: Number,
+    spread: Number
+}));
+
+const BtcDeepLiquidity = mongoose.model('BtcDeepLiquidity', new mongoose.Schema({
+    timestamp: { type: Date, default: Date.now },
+    bid_vol_1: Number, ask_vol_1: Number,
+    bid_vol_2: Number, ask_vol_2: Number,
+    bid_vol_5: Number, ask_vol_5: Number
+}));
+// ---------------------
+
 db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS candles (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -528,8 +552,11 @@ function clusterOB(orders,isBid){
 async function saveOBSnapshot(){
     try{const r=await axios.get(`${BASE}/api/v3/depth?symbol=${SYMBOL}&limit=5`,{timeout:5000});const{bids,asks}=r.data;
     const spread=parseFloat(asks[0][0])-parseFloat(bids[0][0]);
-    await dbRun(`INSERT INTO orderbook_snapshots (symbol,bid_price,bid_volume,ask_price,ask_volume,spread) VALUES (?,?,?,?,?,?)`,
-        [SYMBOL,parseFloat(bids[0][0]),parseFloat(bids[0][1]),parseFloat(asks[0][0]),parseFloat(asks[0][1]),spread]);}catch(e){}
+    await OrderbookSnapshot.create({
+        symbol: SYMBOL, bid_price: parseFloat(bids[0][0]), bid_volume: parseFloat(bids[0][1]),
+        ask_price: parseFloat(asks[0][0]), ask_volume: parseFloat(asks[0][1]), spread: spread
+    });
+    }catch(e){}
 }
 setInterval(saveOBSnapshot,60000);
 saveOBSnapshot();
@@ -554,18 +581,23 @@ async function fetchAndStoreBTCDeepLiquidity() {
             return vol;
         };
 
-        const bid1 = calculateVolume(bids, 0.01, true);
-        const ask1 = calculateVolume(asks, 0.01, false);
-        const bid2 = calculateVolume(bids, 0.02, true);
-        const ask2 = calculateVolume(asks, 0.02, false);
-        const bid5 = calculateVolume(bids, 0.05, true);
-        const ask5 = calculateVolume(asks, 0.05, false);
+        const b1 = calculateVolume(bids, 0.01, true);
+        const a1 = calculateVolume(asks, 0.01, false);
+        const b2 = calculateVolume(bids, 0.02, true);
+        const a2 = calculateVolume(asks, 0.02, false);
+        const b5 = calculateVolume(bids, 0.05, true);
+        const a5 = calculateVolume(asks, 0.05, false);
 
-        await dbRun(`INSERT INTO btc_deep_liquidity (bid_vol_1, ask_vol_1, bid_vol_2, ask_vol_2, bid_vol_5, ask_vol_5) VALUES (?,?,?,?,?,?)`, 
-            [bid1, ask1, bid2, ask2, bid5, ask5]);
+        // Save to Persistent MongoDB
+        await BtcDeepLiquidity.create({
+            bid_vol_1: b1, ask_vol_1: a1,
+            bid_vol_2: b2, ask_vol_2: a2,
+            bid_vol_5: b5, ask_vol_5: a5
+        });
         
         // Auto-delete records older than 24 hours
-        await dbRun(`DELETE FROM btc_deep_liquidity WHERE timestamp <= datetime('now', '-24 hours')`);
+        const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        await BtcDeepLiquidity.deleteMany({ timestamp: { $lte: twentyFourHoursAgo } });
     } catch(err) {
         console.error("Error saving BTC deep liquidity:", err.message);
     }
@@ -600,9 +632,9 @@ app.get('/api/btc-radar', async(req, res) => {
             console.error("Failed to fetch live BTC price for radar", e.message);
         }
 
-        // Get Last 5 minutes for Anti-Spoof (TWAP)
-        const last5 = await dbAll(`SELECT * FROM btc_deep_liquidity ORDER BY id DESC LIMIT 5`);
-        if (!last5 || last5.length === 0) return res.json({ success: false, msg: 'No data yet' });
+        // Fetch last 5 records from MongoDB
+        const last5 = await BtcDeepLiquidity.find().sort({ _id: -1 }).limit(5).lean();
+        if(last5.length < 1) return res.json({ error: "No data yet" });
 
         const latest = last5[0];
         
@@ -615,11 +647,12 @@ app.get('/api/btc-radar', async(req, res) => {
             avg[key] = sum / last5.length;
         }
         
-        // Get 15m ago
-        const m15 = await dbGet(`SELECT * FROM btc_deep_liquidity WHERE timestamp <= datetime('now', '-15 minutes') ORDER BY id DESC LIMIT 1`);
+        // Delta
+        const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
+        const m15 = (await BtcDeepLiquidity.find({ timestamp: { $lte: fifteenMinsAgo } }).sort({ _id: -1 }).limit(1).lean())[0];
         
-        // Get 1h ago
-        const h1 = await dbGet(`SELECT * FROM btc_deep_liquidity WHERE timestamp <= datetime('now', '-1 hour') ORDER BY id DESC LIMIT 1`);
+        const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+        const h1 = (await BtcDeepLiquidity.find({ timestamp: { $lte: oneHourAgo } }).sort({ _id: -1 }).limit(1).lean())[0];
         
         // Calculate 15m CVD from Binance Klines
         let cvdData = null;
@@ -642,8 +675,8 @@ app.get('/api/btc-radar', async(req, res) => {
             console.error("Failed to fetch CVD", e.message);
         }
 
-        // --- NEW: Spoofing Analysis (Max vs Avg) ---
-        const last1440 = await dbAll(`SELECT * FROM btc_deep_liquidity ORDER BY id DESC LIMIT 1440`);
+        // Spoofing Analysis (Real vs Fake) - MongoDB
+        const last1440 = await BtcDeepLiquidity.find().sort({ _id: -1 }).limit(1440).lean();
         let spoofStats = {
             '5m': { totalBids: 0, realBids: 0, fakeBids: 0, totalAsks: 0, realAsks: 0, fakeAsks: 0 },
             '15m': { totalBids: 0, realBids: 0, fakeBids: 0, totalAsks: 0, realAsks: 0, fakeAsks: 0 },
@@ -732,7 +765,7 @@ app.get('/api/liquidity', async(req,res)=>{
         const[history,sigHist,obHist]=await Promise.all([
             dbAll(`SELECT * FROM liquidity_history ORDER BY id DESC LIMIT 10`),
             dbAll(`SELECT * FROM signals ORDER BY id DESC LIMIT 5`),
-            dbAll(`SELECT * FROM orderbook_snapshots ORDER BY id DESC LIMIT 20`)
+            OrderbookSnapshot.find().sort({ _id: -1 }).limit(20).lean()
         ]);
         const responseData = {status:'success',symbol:SYMBOL,timeframe:tf,current_price:cp,signal,
             chart_liquidity:{swing_highs:swingHighs,swing_lows:swingLows},institutional_zones:instZones,
@@ -1151,8 +1184,14 @@ app.get('/api/orderflow', (req, res) => {
 // Periodic DB Save (every 1 minute)
 setInterval(async () => {
     if (liveOrderFlow.whaleWallBid && liveOrderFlow.whaleWallAsk) {
-        db.run(`INSERT INTO orderbook_snapshots (symbol, bid_price, bid_volume, ask_price, ask_volume, spread) VALUES (?, ?, ?, ?, ?, ?)`,
-            [SYMBOL, liveOrderFlow.whaleWallBid.price, liveOrderFlow.buyVol, liveOrderFlow.whaleWallAsk.price, liveOrderFlow.sellVol, liveOrderFlow.whaleWallAsk.price - liveOrderFlow.whaleWallBid.price]);
+        await OrderbookSnapshot.create({
+            symbol: SYMBOL,
+            bid_price: liveOrderFlow.whaleWallBid.price,
+            bid_volume: liveOrderFlow.buyVol,
+            ask_price: liveOrderFlow.whaleWallAsk.price,
+            ask_volume: liveOrderFlow.sellVol,
+            spread: liveOrderFlow.whaleWallAsk.price - liveOrderFlow.whaleWallBid.price
+        });
         
         // Reset volume counters after snapshot
         liveOrderFlow.buyVol = 0;
@@ -1161,7 +1200,8 @@ setInterval(async () => {
     
     // Auto-cleanup: Keep only 48 hours of orderbook snapshots to prevent DB bloat
     try {
-        await dbRun(`DELETE FROM orderbook_snapshots WHERE timestamp <= datetime('now', '-48 hours')`);
+        const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
+        await OrderbookSnapshot.deleteMany({ timestamp: { $lte: fortyEightHoursAgo } });
     } catch(err) {
         console.error("Cleanup error:", err);
     }
