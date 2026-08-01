@@ -2,27 +2,9 @@ import express from 'express';
 import cors from 'cors';
 import axios from 'axios';
 import sqlite3 from 'sqlite3';
-import mongoose from 'mongoose';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import WebSocket from 'ws';
-
-let binanceCooldownUntil = 0;
-
-axios.interceptors.request.use(config => {
-    if (Date.now() < binanceCooldownUntil && config.url && config.url.includes('api.binance.com')) {
-        return Promise.reject(new Error("Binance API on cooldown (418 Ban). Retrying later..."));
-    }
-    return config;
-});
-
-axios.interceptors.response.use(response => response, error => {
-    if (error.response && error.response.status === 418) {
-        console.warn("Binance 418 IP Ban detected! Triggering 5-minute cooldown.");
-        binanceCooldownUntil = Date.now() + 5 * 60 * 1000; // 5 minute cooldown
-    }
-    return Promise.reject(error);
-});
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
@@ -70,31 +52,8 @@ const BASE   = 'https://data-api.binance.vision';
 // Timeframe intervals in milliseconds
 const TF_MS = { '5m': 300000, '15m': 900000, '1h': 3600000, '4h': 14400000, '1d': 86400000 };
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ DATABASE (SQLite for temporary, MongoDB for persistent) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ─── DATABASE ──────────────────────────────────────────────────────────────────
 const db = new sqlite3.Database(path.join(__dirname, 'database.sqlite'));
-
-// --- MongoDB Setup ---
-const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://user:pass@cluster.mongodb.net/alphaflow';
-mongoose.connect(MONGO_URI)
-    .then(() => console.log('Ã¢Å“â€¦ Connected to MongoDB (Persistent Storage)'))
-    .catch(err => console.error('Ã¢ÂÅ’ MongoDB connection error (Check your MONGO_URI):', err));
-
-const OrderbookSnapshot = mongoose.model('OrderbookSnapshot', new mongoose.Schema({
-    timestamp: { type: Date, default: Date.now },
-    symbol: String,
-    bid_price: Number, bid_volume: Number,
-    ask_price: Number, ask_volume: Number,
-    spread: Number
-}));
-
-const BtcDeepLiquidity = mongoose.model('BtcDeepLiquidity', new mongoose.Schema({
-    timestamp: { type: Date, default: Date.now },
-    bid_vol_1: Number, ask_vol_1: Number,
-    bid_vol_2: Number, ask_vol_2: Number,
-    bid_vol_5: Number, ask_vol_5: Number
-}));
-// ---------------------
-
 db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS candles (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -164,10 +123,10 @@ const dbRun = (sql,p=[]) => new Promise((res,rej) => db.run(sql,p,function(e){ e
 const dbAll = (sql,p=[]) => new Promise((res,rej) => db.all(sql,p,(e,rows)=>{ e?rej(e):res(rows); }));
 const dbGet = (sql,p=[]) => new Promise((res,rej) => db.get(sql,p,(e,row)=>{ e?rej(e):res(row); }));
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ DOWNLOAD STATUS (in-memory) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ─── DOWNLOAD STATUS (in-memory) ───────────────────────────────────────────────
 let dlStatus = { running: false, progress: 0, message: 'Not started', log: [] };
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ MATH HELPERS Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ─── MATH HELPERS ─────────────────────────────────────────────────────────────
 function calcVWAP(candlesSubset) {
     if (candlesSubset.length === 0) return 0;
     let sumPV = 0, sumV = 0;
@@ -198,7 +157,7 @@ function calcATR(candles, period=14) {
     return trs.slice(-period).reduce((a,b)=>a+b,0) / Math.min(period, trs.length);
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ SMC STRUCTURE DETECTION Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ─── SMC STRUCTURE DETECTION ───────────────────────────────────────────────────
 function detectSwingsSMC(candles, window=3) {
     const highs=[], lows=[];
     for (let i=window; i<candles.length-window; i++) {
@@ -213,7 +172,7 @@ function detectSwingsSMC(candles, window=3) {
     return {highs, lows};
 }
 
-// Detect BOS: Break of Structure Ã¢â‚¬â€ price closes beyond previous swing
+// Detect BOS: Break of Structure — price closes beyond previous swing
 function detectBOS(candles, highs, lows) {
     const events = [];
     for (let i=1; i<candles.length; i++) {
@@ -358,15 +317,15 @@ function evalStrategies(candles, patterns, bosEvents, chochEvents, obsList, fvgL
         const vwapAligned = (isBuy && ctx.trend==='UPTREND') || (!isBuy && ctx.trend==='DOWNTREND');
         const structBreak = isBuy ? afterCandles[0]?.close > sw.open : afterCandles[0]?.close < sw.open;
 
-        // SMC: S7 Ã¢â‚¬â€ BOS + OB Retest + Liquidity Sweep
+        // SMC: S7 — BOS + OB Retest + Liquidity Sweep
         const nearBOS = bosEvents.some(b=>Math.abs(b.idx-idx)<=5);
         const nearOB  = obsList.some(o=>Math.abs(o.idx-idx)<=8 && ((isBuy && o.type==='OB_BULL' && sw.low < o.ob_bottom) || (!isBuy && o.type==='OB_BEAR' && sw.high > o.ob_top)));
-        // SMC: S8 Ã¢â‚¬â€ CHoCH + FVG
+        // SMC: S8 — CHoCH + FVG
         const nearCHoCH = chochEvents.some(c=>Math.abs(c.idx-idx)<=8);
         const nearFVG   = fvgList.some(f=>Math.abs(f.idx-idx)<=5 && ((isBuy && f.type==='FVG_BULL') || (!isBuy && f.type==='FVG_BEAR')));
-        // SMC: S9 Ã¢â‚¬â€ EQH/EQL sweep
+        // SMC: S9 — EQH/EQL sweep
         const nearEQHL  = eqhlList.some(e=>Math.abs(e.idx-idx)<=3);
-        // SMC: S10 Ã¢â‚¬â€ Full SMC (CHoCH + OB + Volume)
+        // SMC: S10 — Full SMC (CHoCH + OB + Volume)
         const fullSMC = nearCHoCH && nearOB && isVolSpike;
 
         const outcome = pat.outcome==='UP', win = isBuy?outcome:!outcome, pct = pat.pct_move;
@@ -401,7 +360,7 @@ function evalStrategies(candles, patterns, bosEvents, chochEvents, obsList, fvgL
     return result;
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ PATTERN ANALYSIS Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ─── PATTERN ANALYSIS ─────────────────────────────────────────────────────────
 function detectSwingPoints(candles, window=5) {
     const highs=[], lows=[];
     for (let i=window; i<candles.length-window; i++) {
@@ -467,7 +426,7 @@ async function analyzeAllPatterns() {
     }
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ DOWNLOAD ENGINE Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ─── DOWNLOAD ENGINE ───────────────────────────────────────────────────────────
 async function downloadChunk(tf, endTime) {
     const url = endTime
         ? `${BASE}/api/v3/klines?symbol=${SYMBOL}&interval=${tf}&endTime=${endTime}&limit=1000`
@@ -487,7 +446,7 @@ async function downloadChunk(tf, endTime) {
 
 async function runPartDownload(part) {
     if (dlStatus.running) return;
-    dlStatus = {running:true, progress:0, message:`Starting Part ${part} downloadÃ¢â‚¬Â¦`, log:[]};
+    dlStatus = {running:true, progress:0, message:`Starting Part ${part} download…`, log:[]};
     const TFS = ['5m','15m','1h','4h','1d'];
     // Part N: go back N*1000 bars from now for each timeframe
     for (let t=0; t<TFS.length; t++) {
@@ -495,20 +454,20 @@ async function runPartDownload(part) {
         const interval = TF_MS[tf];
         // Part 1 = latest, Part 2 = 1000-2000 bars back, etc.
         const endTime = Date.now() - (part-1) * 1000 * interval;
-        dlStatus.message = `[Part ${part}] Downloading ${tf}Ã¢â‚¬Â¦`;
+        dlStatus.message = `[Part ${part}] Downloading ${tf}…`;
         try {
             const r = await downloadChunk(tf, part===1 ? null : endTime);
             const msg = `[Part ${part}] ${tf}: ${r.inserted} new candles saved`;
             dlStatus.log.push(msg);
             dlStatus.message = msg;
         } catch(e) {
-            dlStatus.log.push(`[Part ${part}] ${tf}: Error Ã¢â‚¬â€ ${e.message}`);
+            dlStatus.log.push(`[Part ${part}] ${tf}: Error — ${e.message}`);
         }
         dlStatus.progress = Math.round(((t+1)/TFS.length) * 70);
     }
     // Count total
     const total = await dbGet(`SELECT COUNT(*) as c FROM candles WHERE symbol=?`,[SYMBOL]);
-    dlStatus.message = `Running pattern analysis on ${total?.c||0} candlesÃ¢â‚¬Â¦`;
+    dlStatus.message = `Running pattern analysis on ${total?.c||0} candles…`;
     dlStatus.progress = 75;
     await analyzeAllPatterns();
     dlStatus.progress = 100;
@@ -516,45 +475,7 @@ async function runPartDownload(part) {
     dlStatus.running = false;
 }
 
-// Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯ LIVE ANALYSIS HELPERS Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯Ã°Å¸Å½Â¯
-
-function calculateVolatility(klines) {
-    if(!klines || klines.length < 20) return { status: 'Normal', stdDevPct: 0 };
-    const recent = klines.slice(-20);
-    const closes = recent.map(k => parseFloat(k[4]));
-    const mean = closes.reduce((a,b) => a+b, 0) / closes.length;
-    const squaredDiffs = closes.map(c => Math.pow(c - mean, 2));
-    const variance = squaredDiffs.reduce((a,b) => a+b, 0) / closes.length;
-    const stdDev = Math.sqrt(variance);
-    const stdDevPct = (stdDev / mean) * 100;
-    
-    let status = 'Normal';
-    if(stdDevPct <= 0.15) status = 'Squeeze (Spike Imminent)';
-    else if(stdDevPct > 0.40) status = 'High Volatility';
-    
-    return { status, stdDevPct };
-}
-
-function calculateImbalance(bids, asks) {
-    let totalBids = 0, totalAsks = 0;
-    bids.forEach(b => totalBids += (parseFloat(b[0]) * parseFloat(b[1])));
-    asks.forEach(a => totalAsks += (parseFloat(a[0]) * parseFloat(a[1])));
-    
-    const total = totalBids + totalAsks;
-    if(total === 0) return { bidRatio: 50, askRatio: 50, status: 'Neutral' };
-    
-    const bidRatio = (totalBids / total) * 100;
-    const askRatio = (totalAsks / total) * 100;
-    
-    let status = 'Neutral';
-    if(bidRatio > 65) status = 'Extreme Buy Pressure (Spike UP Likely)';
-    else if(askRatio > 65) status = 'Extreme Sell Pressure (Spike DOWN Likely)';
-    else if(bidRatio > 55) status = 'Bullish Bias';
-    else if(askRatio > 55) status = 'Bearish Bias';
-    
-    return { bidRatio, askRatio, status };
-}
-
+// ─── LIVE ANALYSIS HELPERS ─────────────────────────────────────────────────────
 function findSwingPointsLive(klines) {
     const swingHighs=[], swingLows=[];
     const W=5;
@@ -563,7 +484,7 @@ function findSwingPointsLive(klines) {
         let isH=true,isL=true;
         for (let d=1;d<=W;d++){
             if(h<=parseFloat(klines[i-d][2])||h<=parseFloat(klines[i+d][2])) isH=false;
-            if(l>=parseFloat(klines[i-d][3])||l>=parseFloat(klines[i+d][3]))  isL=false;
+            if(l>=parseFloat(klines[i-d][3])||l>=parseFloat(klines[i+d][3])) isL=false;
         }
         if(isH) swingHighs.push({price:h,time:t});
         if(isL) swingLows.push({price:l,time:t});
@@ -592,8 +513,8 @@ function generateSignal(cp,swingHighs,swingLows,bids,asks,klines){
     const last3=klines.slice(-3);
     const bouncing=last3[2][4]>last3[1][4]&&last3[1][4]>last3[0][4];
     const dropping=last3[2][4]<last3[1][4]&&last3[1][4]<last3[0][4];
-    if(cp<rL&&sBid&&bouncing){const dist=cp-rL*0.997;return{signal:'BUY',confidence:'HIGH',entry:cp,stop_loss:rL*0.997,take_profit:cp+dist*2,reason:`Sweep below Swing Low $${rL.toFixed(0)}. Institutions grabbed liquidity. Price bouncing. BUY.`,why_buy:[`Swing Low $${rL.toFixed(0)} swept â€” retail SLs triggered`,`Strong bid wall confirms institutional buying`,`Bouncing â€” 3 bullish candles`,`Target: $${pH.toFixed(0)}`]};}
-    if(cp>rH&&sAsk&&dropping){const dist=rH*1.003-cp;return{signal:'SELL',confidence:'HIGH',entry:cp,stop_loss:rH*1.003,take_profit:cp-dist*2,reason:`Sweep above Swing High $${rH.toFixed(0)}. Institutions distributed. Price dropping. SELL.`,why_sell:[`Swing High $${rH.toFixed(0)} swept â€” retail buys triggered`,`Massive ask wall confirms institutional selling`,`Dropping â€” 3 bearish candles`,`Target: $${pL.toFixed(0)}`]};}
+    if(cp<rL&&sBid&&bouncing){const dist=cp-rL*0.997;return{signal:'BUY',confidence:'HIGH',entry:cp,stop_loss:rL*0.997,take_profit:cp+dist*2,reason:`Sweep below Swing Low $${rL.toFixed(0)}. Institutions grabbed liquidity. Price bouncing. BUY.`,why_buy:[`Swing Low $${rL.toFixed(0)} swept — retail SLs triggered`,`Strong bid wall confirms institutional buying`,`Bouncing — 3 bullish candles`,`Target: $${pH.toFixed(0)}`]};}
+    if(cp>rH&&sAsk&&dropping){const dist=rH*1.003-cp;return{signal:'SELL',confidence:'HIGH',entry:cp,stop_loss:rH*1.003,take_profit:cp-dist*2,reason:`Sweep above Swing High $${rH.toFixed(0)}. Institutions distributed. Price dropping. SELL.`,why_sell:[`Swing High $${rH.toFixed(0)} swept — retail buys triggered`,`Massive ask wall confirms institutional selling`,`Dropping — 3 bearish candles`,`Target: $${pL.toFixed(0)}`]};}
     return{signal:'WAIT',confidence:'LOW',entry:null,stop_loss:null,take_profit:null,reason:`No sweep detected. Wait for $${rL.toFixed(0)} sweep (BUY) or $${rH.toFixed(0)} sweep (SELL).`,why_wait:[`No institutional sweep detected yet`,`BUY setup: wait for sweep of $${rL.toFixed(0)}`,`SELL setup: wait for sweep of $${rH.toFixed(0)}`,`Do not trade until institutions move`]};
 }
 function clusterOB(orders,isBid){
@@ -603,190 +524,15 @@ function clusterOB(orders,isBid){
     return clusters.sort((a,b)=>b.volume-a.volume).slice(0,5);
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ WEBSOCKET LIVE DATA (No REST API polling - avoids 418 IP ban) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
-// We use Binance WebSocket streams for real-time data instead of polling REST API
-// This is free, unlimited, and will NOT trigger rate limits or IP bans.
-
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ LIVE ORDER FLOW & RETAIL TRAP TRACKING (WebSockets) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
-let liveOrderFlow = {
-    whaleWallBid: null, // { price, qty }
-    whaleWallAsk: null, // { price, qty }
-    cvd: 0,
-    buyVol: 0,
-    sellVol: 0,
-    currentPrice: null,
-    trapAlert: null, // text alert string
-    stopLossZone: null, // text alert string
-    spoofAlert: null, // text alert string
-    openInterest: 0,
-    prevOpenInterest: 0,
-    oiTrend: 'Flat'
-};
-
-// --- FETCH OPEN INTEREST (FUTURES) ---
-async function fetchOpenInterest() {
-    try {
-        const response = await axios.get('https://fapi.binance.com/fapi/v1/openInterest?symbol=BTCUSDT', { timeout: 3000 });
-        if (response.data && response.data.openInterest) {
-            const currentOI = parseFloat(response.data.openInterest);
-            if (liveOrderFlow.openInterest !== 0) {
-                liveOrderFlow.prevOpenInterest = liveOrderFlow.openInterest;
-                if (currentOI > liveOrderFlow.prevOpenInterest + 5) liveOrderFlow.oiTrend = 'Increasing';
-                else if (currentOI < liveOrderFlow.prevOpenInterest - 5) liveOrderFlow.oiTrend = 'Decreasing';
-                else liveOrderFlow.oiTrend = 'Flat';
-            }
-            liveOrderFlow.openInterest = currentOI;
-        }
-    } catch (err) {}
+// ─── PERIODIC SNAPSHOT ────────────────────────────────────────────────────────
+async function saveOBSnapshot(){
+    try{const r=await axios.get(`${BASE}/api/v3/depth?symbol=${SYMBOL}&limit=5`,{timeout:5000});const{bids,asks}=r.data;
+    const spread=parseFloat(asks[0][0])-parseFloat(bids[0][0]);
+    await dbRun(`INSERT INTO orderbook_snapshots (symbol,bid_price,bid_volume,ask_price,ask_volume,spread) VALUES (?,?,?,?,?,?)`,
+        [SYMBOL,parseFloat(bids[0][0]),parseFloat(bids[0][1]),parseFloat(asks[0][0]),parseFloat(asks[0][1]),spread]);}catch(e){}
 }
-setInterval(fetchOpenInterest, 30000); // 30s polling
-setTimeout(fetchOpenInterest, 2000);
-
-// --- KILLZONE DETECTOR ---
-function getKillzone() {
-    const hour = new Date().getUTCHours();
-    if (hour >= 0 && hour < 4) return 'Tokyo / Asian Session (Retail volume & Range bound)';
-    if (hour >= 7 && hour < 10) return 'London Open Killzone (High Manipulation & Judas Swings)';
-    if (hour >= 13 && hour < 16) return 'New York Open Killzone (Trend Establishing Volume)';
-    return 'Dead Zone / Transition (Wait for volume)';
-}
-
-let lastWhaleWallBid = null;
-let lastWhaleWallAsk = null;
-
-let lastTradeId = 0;
-
-let wsDepth = null;
-let wsTrade = null;
-
-const WS_BASE = 'wss://stream.binance.com:9443/ws';
-
-function connectDepthStream(symbol) {
-    const streamSymbol = symbol.toLowerCase();
-    if (wsDepth) { try { wsDepth.close(); } catch(e) {} }
-    wsDepth = new WebSocket(`${WS_BASE}/${streamSymbol}@depth20@100ms`);
-    
-    wsDepth.on('message', (data) => {
-        try {
-            const d = JSON.parse(data);
-            const bids = d.bids || [];
-            const asks = d.asks || [];
-            
-            let totalBidVol = 0, totalAskVol = 0;
-            let maxBid = { price: 0, qty: 0 };
-            let maxAsk = { price: 0, qty: 0 };
-
-            for (const b of bids) {
-                const price = parseFloat(b[0]), qty = parseFloat(b[1]);
-                totalBidVol += qty;
-                if (qty > maxBid.qty) maxBid = { price, qty };
-            }
-            for (const a of asks) {
-                const price = parseFloat(a[0]), qty = parseFloat(a[1]);
-                totalAskVol += qty;
-                if (qty > maxAsk.qty) maxAsk = { price, qty };
-            }
-
-            const prevBid = liveOrderFlow.whaleWallBid;
-            const prevAsk = liveOrderFlow.whaleWallAsk;
-
-            liveOrderFlow.whaleWallBid = maxBid.qty > 1.5 ? maxBid : null;
-            liveOrderFlow.whaleWallAsk = maxAsk.qty > 1.5 ? maxAsk : null;
-
-            // Spoofing detection
-            if (prevBid && !liveOrderFlow.whaleWallBid && liveOrderFlow.currentPrice > prevBid.price) {
-                liveOrderFlow.spoofAlert = `Ã°Å¸Å¡Â¨ Fake Buy Wall Pulled: $${prevBid.price}. Possible Dump incoming!`;
-            } else if (prevAsk && !liveOrderFlow.whaleWallAsk && liveOrderFlow.currentPrice < prevAsk.price) {
-                liveOrderFlow.spoofAlert = `Ã°Å¸Å¡Â¨ Fake Sell Wall Pulled: $${prevAsk.price}. Possible Pump incoming!`;
-            }
-
-            if (totalBidVol > totalAskVol * 1.5 && bids.length > 0) {
-                liveOrderFlow.stopLossZone = `Retail Long SLs likely around $${parseFloat(bids[bids.length - 1][0]).toFixed(2)}`;
-            } else if (totalAskVol > totalBidVol * 1.5 && asks.length > 0) {
-                liveOrderFlow.stopLossZone = `Retail Short SLs likely around $${parseFloat(asks[asks.length - 1][0]).toFixed(2)}`;
-            } else {
-                liveOrderFlow.stopLossZone = 'Neutral - No obvious SL clusters';
-            }
-
-            // Also store for snapshot
-            if (liveOrderFlow.whaleWallBid && liveOrderFlow.whaleWallAsk) {
-                wsLatestDepth = { bids, asks };
-            }
-        } catch(e) {}
-    });
-    wsDepth.on('error', (err) => console.error('[WS Depth Error]', err.message));
-    wsDepth.on('close', () => {
-        console.warn('[WS Depth] Closed. Reconnecting in 5s...');
-        setTimeout(() => connectDepthStream(SYMBOL), 5000);
-    });
-}
-
-function connectTradeStream(symbol) {
-    const streamSymbol = symbol.toLowerCase();
-    if (wsTrade) { try { wsTrade.close(); } catch(e) {} }
-    wsTrade = new WebSocket(`${WS_BASE}/${streamSymbol}@aggTrade`);
-
-    wsTrade.on('message', (data) => {
-        try {
-            const t = JSON.parse(data);
-            const qty = parseFloat(t.q);
-            const price = parseFloat(t.p);
-            liveOrderFlow.currentPrice = price;
-            
-            if (t.m) { // isBuyerMaker => market sell
-                liveOrderFlow.cvd -= qty;
-                liveOrderFlow.sellVol += qty;
-            } else { // market buy
-                liveOrderFlow.cvd += qty;
-                liveOrderFlow.buyVol += qty;
-            }
-            liveOrderFlow.cvd *= 0.9999; // slow decay
-
-            // Trap detection
-            if (liveOrderFlow.cvd < -10 && liveOrderFlow.whaleWallBid && price >= liveOrderFlow.whaleWallBid.price) {
-                liveOrderFlow.trapAlert = `Ã°Å¸â€Â´ Retail Trap: Heavy Retail Selling (${Math.abs(liveOrderFlow.cvd).toFixed(2)} BTC), Whale Buy Wall at $${liveOrderFlow.whaleWallBid.price}. Potential PUMP!`;
-            } else if (liveOrderFlow.cvd > 10 && liveOrderFlow.whaleWallAsk && price <= liveOrderFlow.whaleWallAsk.price) {
-                liveOrderFlow.trapAlert = `Ã°Å¸â€Â´ Retail Trap: Heavy Retail Buying (${liveOrderFlow.cvd.toFixed(2)} BTC), Whale Sell Wall at $${liveOrderFlow.whaleWallAsk.price}. Potential DUMP!`;
-            } else {
-                liveOrderFlow.trapAlert = 'No traps detected.';
-            }
-        } catch(e) {}
-    });
-    wsTrade.on('error', (err) => console.error('[WS Trade Error]', err.message));
-    wsTrade.on('close', () => {
-        console.warn('[WS Trade] Closed. Reconnecting in 5s...');
-        setTimeout(() => connectTradeStream(SYMBOL), 5000);
-    });
-}
-
-let wsLatestDepth = null;
-
-// Start WebSocket connections
-console.log('[WS] Starting Binance WebSocket streams (no REST polling)...');
-connectDepthStream(SYMBOL);
-connectTradeStream(SYMBOL);
-
-// Periodic DB Snapshot (uses WS data, no REST call)
-setInterval(async () => {
-    if (liveOrderFlow.whaleWallBid && liveOrderFlow.whaleWallAsk) {
-        try {
-            await OrderbookSnapshot.create({
-                symbol: SYMBOL,
-                bid_price: liveOrderFlow.whaleWallBid.price,
-                bid_volume: liveOrderFlow.buyVol,
-                ask_price: liveOrderFlow.whaleWallAsk.price,
-                ask_volume: liveOrderFlow.sellVol,
-                spread: liveOrderFlow.whaleWallAsk.price - liveOrderFlow.whaleWallBid.price
-            });
-            liveOrderFlow.buyVol = 0;
-            liveOrderFlow.sellVol = 0;
-        } catch(e) {}
-    }
-    try {
-        const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
-        await OrderbookSnapshot.deleteMany({ timestamp: { $lte: fortyEightHoursAgo } });
-    } catch(err) { console.error('Cleanup error:', err); }
-}, 60000);
+setInterval(saveOBSnapshot,60000);
+saveOBSnapshot();
 
 async function fetchAndStoreBTCDeepLiquidity() {
     try {
@@ -808,32 +554,26 @@ async function fetchAndStoreBTCDeepLiquidity() {
             return vol;
         };
 
-        const b1 = calculateVolume(bids, 0.01, true);
-        const a1 = calculateVolume(asks, 0.01, false);
-        const b2 = calculateVolume(bids, 0.02, true);
-        const a2 = calculateVolume(asks, 0.02, false);
-        const b5 = calculateVolume(bids, 0.05, true);
-        const a5 = calculateVolume(asks, 0.05, false);
+        const bid1 = calculateVolume(bids, 0.01, true);
+        const ask1 = calculateVolume(asks, 0.01, false);
+        const bid2 = calculateVolume(bids, 0.02, true);
+        const ask2 = calculateVolume(asks, 0.02, false);
+        const bid5 = calculateVolume(bids, 0.05, true);
+        const ask5 = calculateVolume(asks, 0.05, false);
 
-        // Save to Persistent MongoDB
-        await BtcDeepLiquidity.create({
-            bid_vol_1: b1, ask_vol_1: a1,
-            bid_vol_2: b2, ask_vol_2: a2,
-            bid_vol_5: b5, ask_vol_5: a5
-        });
+        await dbRun(`INSERT INTO btc_deep_liquidity (bid_vol_1, ask_vol_1, bid_vol_2, ask_vol_2, bid_vol_5, ask_vol_5) VALUES (?,?,?,?,?,?)`, 
+            [bid1, ask1, bid2, ask2, bid5, ask5]);
         
         // Auto-delete records older than 24 hours
-        const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-        await BtcDeepLiquidity.deleteMany({ timestamp: { $lte: twentyFourHoursAgo } });
+        await dbRun(`DELETE FROM btc_deep_liquidity WHERE timestamp <= datetime('now', '-24 hours')`);
     } catch(err) {
         console.error("Error saving BTC deep liquidity:", err.message);
     }
 }
-setInterval(fetchAndStoreBTCDeepLiquidity, 90000);
-// Delay first call by 30s to let startup settle and reduce 418 risk
-setTimeout(fetchAndStoreBTCDeepLiquidity, 30000);
+setInterval(fetchAndStoreBTCDeepLiquidity, 60000);
+fetchAndStoreBTCDeepLiquidity();
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ API ROUTES Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ─── API ROUTES ───────────────────────────────────────────────────────────────
 
 // 0. On-Chain Liquidity Proxy (bypasses adblockers)
 app.get('/api/onchain-liquidity', async (req, res) => {
@@ -860,9 +600,9 @@ app.get('/api/btc-radar', async(req, res) => {
             console.error("Failed to fetch live BTC price for radar", e.message);
         }
 
-        // Fetch last 5 records from MongoDB
-        const last5 = await BtcDeepLiquidity.find().sort({ _id: -1 }).limit(5).lean();
-        if(last5.length < 1) return res.json({ error: "No data yet" });
+        // Get Last 5 minutes for Anti-Spoof (TWAP)
+        const last5 = await dbAll(`SELECT * FROM btc_deep_liquidity ORDER BY id DESC LIMIT 5`);
+        if (!last5 || last5.length === 0) return res.json({ success: false, msg: 'No data yet' });
 
         const latest = last5[0];
         
@@ -875,12 +615,11 @@ app.get('/api/btc-radar', async(req, res) => {
             avg[key] = sum / last5.length;
         }
         
-        // Delta
-        const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
-        const m15 = (await BtcDeepLiquidity.find({ timestamp: { $lte: fifteenMinsAgo } }).sort({ _id: -1 }).limit(1).lean())[0];
+        // Get 15m ago
+        const m15 = await dbGet(`SELECT * FROM btc_deep_liquidity WHERE timestamp <= datetime('now', '-15 minutes') ORDER BY id DESC LIMIT 1`);
         
-        const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
-        const h1 = (await BtcDeepLiquidity.find({ timestamp: { $lte: oneHourAgo } }).sort({ _id: -1 }).limit(1).lean())[0];
+        // Get 1h ago
+        const h1 = await dbGet(`SELECT * FROM btc_deep_liquidity WHERE timestamp <= datetime('now', '-1 hour') ORDER BY id DESC LIMIT 1`);
         
         // Calculate 15m CVD from Binance Klines
         let cvdData = null;
@@ -903,8 +642,8 @@ app.get('/api/btc-radar', async(req, res) => {
             console.error("Failed to fetch CVD", e.message);
         }
 
-        // Spoofing Analysis (Real vs Fake) - MongoDB
-        const last1440 = await BtcDeepLiquidity.find().sort({ _id: -1 }).limit(1440).lean();
+        // --- NEW: Spoofing Analysis (Max vs Avg) ---
+        const last1440 = await dbAll(`SELECT * FROM btc_deep_liquidity ORDER BY id DESC LIMIT 1440`);
         let spoofStats = {
             '5m': { totalBids: 0, realBids: 0, fakeBids: 0, totalAsks: 0, realAsks: 0, fakeAsks: 0 },
             '15m': { totalBids: 0, realBids: 0, fakeBids: 0, totalAsks: 0, realAsks: 0, fakeAsks: 0 },
@@ -961,328 +700,12 @@ app.get('/api/btc-radar', async(req, res) => {
     }
 });
 
-// Internal JARVIS AI Engine (Fallback) Ã¢â‚¬â€ always reads from live WebSocket data
-function generateInternalJarvisAnalysis(data) {
-    // Always pull latest live data from WebSocket streams
-    const price    = liveOrderFlow.currentPrice || data.currentPrice;
-    const cvdNet   = liveOrderFlow.cvd || (data.cvdData ? data.cvdData.netCvd : 0);
-    const wsBid    = liveOrderFlow.whaleWallBid;
-    const wsAsk    = liveOrderFlow.whaleWallAsk;
-    const wsTrap   = liveOrderFlow.trapAlert;
-    const wsSpoof  = liveOrderFlow.spoofAlert;
-    const wsSLZone = liveOrderFlow.stopLossZone;
-    const { swingHighs, swingLows, volatility, imbalance } = data;
-    const support    = swingLows  && swingLows.length  > 0 ? swingLows[swingLows.length-1].price.toFixed(2)  : 'N/A';
-    const resistance = swingHighs && swingHighs.length > 0 ? swingHighs[swingHighs.length-1].price.toFixed(2) : 'N/A';
-
-    const fib50 = (support !== 'N/A' && resistance !== 'N/A') ? (parseFloat(resistance) + parseFloat(support)) / 2 : null;
-    let pdZone = '';
-    if (fib50 && price) {
-        if (price > fib50) pdZone = `<span style="color:var(--sell)">Premium Zone (High Risk to Buy)</span>`;
-        else pdZone = `<span style="color:var(--buy)">Discount Zone (High Risk to Sell)</span>`;
-    }
-
-    let html = `<strong>[Internal AI]</strong> ${new Date().toLocaleTimeString()} &mdash; à¦²à¦¾à¦‡à¦­ à¦®à¦¾à¦°à§à¦•à§‡à¦Ÿ à¦…à§à¦¯à¦¾à¦¨à¦¾à¦²à¦¾à¦‡à¦¸à¦¿à¦¸:<br>`;
-    html += `&#128336; <strong>Session:</strong> ${getKillzone()}<br><br>`;
-    if (price) html += `Price: <strong>$${parseFloat(price).toLocaleString()}</strong> | Zone: ${pdZone}<br>`;
-    if (liveOrderFlow.openInterest) {
-        let oiColor = liveOrderFlow.oiTrend === 'Increasing' ? 'var(--buy)' : (liveOrderFlow.oiTrend === 'Decreasing' ? 'var(--sell)' : '#fff');
-        html += `Open Interest: <strong>${liveOrderFlow.openInterest.toLocaleString()}</strong> (<span style="color:${oiColor}">${liveOrderFlow.oiTrend}</span>)<br>`;
-    }
-
-    // Volatility
-    if (volatility && volatility.stdDevPct <= 0.15) {
-        html += `<span style="color:#f59e0b">&#9889; Squeeze (${volatility.stdDevPct.toFixed(2)}%) &mdash; à¦¬à§œ Spike à¦†à¦¸à¦¤à§‡ à¦ªà¦¾à¦°à§‡!</span><br>`;
-    } else if (volatility && volatility.stdDevPct > 0.40) {
-        html += `<strong>&#128293; High Volatility (${volatility.stdDevPct.toFixed(2)}%)</strong> &mdash; à¦ªà§à¦°à¦¾à¦‡à¦¸ à¦–à§à¦¬ à¦¦à§à¦°à§à¦¤ à¦®à§à¦­ à¦•à¦°à¦›à§‡à¥¤<br>`;
-    } else if (volatility) {
-        html += `Volatility à¦¸à§à¦¬à¦¾à¦­à¦¾à¦¬à¦¿à¦• (${volatility.stdDevPct.toFixed(2)}%).<br>`;
-    }
-
-    // Whale Walls from WebSocket
-    if (wsBid) html += `&#128011; <span style="color:var(--buy)">Whale Buy Wall: $${wsBid.price.toFixed(2)} (${wsBid.qty.toFixed(2)} BTC) &mdash; à¦‡à¦¨à§à¦¸à¦Ÿà¦¿à¦Ÿà¦¿à¦‰à¦¶à¦¨à¦¾à¦² à¦¬à¦¾à¦‡ à¦œà§‹à¦¨ à¦…à§à¦¯à¦¾à¦•à¦Ÿà¦¿à¦­à¥¤</span><br>`;
-    if (wsAsk) html += `&#128011; <span style="color:var(--sell)">Whale Sell Wall: $${wsAsk.price.toFixed(2)} (${wsAsk.qty.toFixed(2)} BTC) &mdash; à¦‡à¦¨à§à¦¸à¦Ÿà¦¿à¦Ÿà¦¿à¦‰à¦¶à¦¨à¦¾à¦² à¦¸à§‡à¦² à¦œà§‹à¦¨ à¦…à§à¦¯à¦¾à¦•à¦Ÿà¦¿à¦­à¥¤</span><br>`;
-    if (wsSpoof) html += `&#128680; <span style="color:var(--sell)">${wsSpoof}</span><br>`;
-
-    // Order Book Imbalance
-    let isBullishBias = false;
-    if (imbalance) {
-        if (imbalance.bidRatio > 65) {
-            html += `Order Book: <span style="color:var(--buy)">Extreme Buy Pressure (${imbalance.bidRatio.toFixed(1)}%) &mdash; à¦‰à¦ªà¦°à§‡à¦° à¦¦à¦¿à¦•à§‡ Spike à¦¹à¦“à§Ÿà¦¾à¦° à¦¸à¦®à§à¦­à¦¾à¦¬à¦¨à¦¾ à¦¬à§‡à¦¶à¦¿à¥¤</span><br>`;
-            isBullishBias = true;
-        } else if (imbalance.askRatio > 65) {
-            html += `Order Book: <span style="color:var(--sell)">Extreme Sell Pressure (${imbalance.askRatio.toFixed(1)}%) &mdash; à¦®à¦¾à¦°à§à¦•à§‡à¦Ÿ Dump à¦•à¦°à¦¤à§‡ à¦ªà¦¾à¦°à§‡à¥¤</span><br>`;
-        } else {
-            html += `Order Book: à¦¬à§à¦¯à¦¾à¦²à§‡à¦¨à§à¦¸à¦¡ à¦…à¦¬à¦¸à§à¦¥à¦¾à§Ÿ à¦†à¦›à§‡à¥¤<br>`;
-        }
-    }
-
-    // CVD from WebSocket
-    if (cvdNet > 10) {
-        html += `CVD: <span style="color:var(--buy)">+${cvdNet.toFixed(2)} BTC bought</span> &mdash; à¦¸à§à¦ªà¦Ÿ à¦®à¦¾à¦°à§à¦•à§‡à¦Ÿà§‡ à¦ªà§à¦°à¦šà§à¦° à¦…à§à¦¯à¦¾à¦—à§à¦°à§‡à¦¸à¦¿à¦­ à¦¬à¦¾à¦‡à¦‚ à¦¹à¦šà§à¦›à§‡à¥¤<br>`;
-    } else if (cvdNet < -10) {
-        html += `CVD: <span style="color:var(--sell)">${cvdNet.toFixed(2)} BTC sold</span> &mdash; à¦¸à§à¦ªà¦Ÿ à¦®à¦¾à¦°à§à¦•à§‡à¦Ÿà§‡ à¦ªà§à¦°à¦šà§à¦° à¦…à§à¦¯à¦¾à¦—à§à¦°à§‡à¦¸à¦¿à¦­ à¦¸à§‡à¦²à¦¿à¦‚ à¦¹à¦šà§à¦›à§‡à¥¤<br>`;
-    } else {
-        html += `CVD: à¦¨à¦¿à¦‰à¦Ÿà§à¦°à¦¾à¦² à¦¬à¦¾ à¦¸à§à¦¬à¦¾à¦­à¦¾à¦¬à¦¿à¦•à¥¤<br>`;
-    }
-
-    // Trap Probability
-    let trapProb = 20, trapType = 'None';
-    if (isBullishBias && cvdNet < -5) {
-        trapProb = 85; trapType = 'FAKE PUMP (Bull Trap)';
-        html += `<br>&#9888;&#65039; Buy Pressure + Negative CVD = <span style="color:var(--sell)">${trapType}</span>. Trap Probability: <strong>${trapProb}%</strong><br>`;
-    } else if (!isBullishBias && cvdNet > 5) {
-        trapProb = 85; trapType = 'FAKE DUMP (Bear Trap)';
-        html += `<br>&#9888;&#65039; Sell Pressure + Positive CVD = <span style="color:var(--buy)">${trapType}</span>. Trap Probability: <strong>${trapProb}%</strong><br>`;
-    } else {
-        html += `<br>&#9989; à¦•à§‹à¦¨à§‹ à¦•à§à¦²à¦¿à§Ÿà¦¾à¦° à¦Ÿà§à¦°à§à¦¯à¦¾à¦ª à¦¨à§‡à¦‡à¥¤ ${wsSLZone || ''}<br>`;
-    }
-
-    // Live trap alert from WebSocket
-    if (wsTrap && !wsTrap.includes('No traps')) {
-        html += `<br>&#128308; Live Alert: <span style="color:var(--sell)">${wsTrap}</span><br>`;
-    }
-
-    // Final Verdict Calculation (Anti-Retail SMC)
-    let bullishScore = 0;
-    let bearishScore = 0;
-    
-    if (imbalance && imbalance.bidRatio > 65) bullishScore++;
-    if (imbalance && imbalance.askRatio > 65) bearishScore++;
-    if (cvdNet > 10) bullishScore++;
-    if (cvdNet < -10) bearishScore++;
-    if (wsBid) bullishScore++;
-    if (wsAsk) bearishScore++;
-    if (trapType === 'FAKE DUMP (Bear Trap)') bullishScore += 2;
-    if (trapType === 'FAKE PUMP (Bull Trap)') bearishScore += 2;
-    
-    let verdict = "";
-    let verdictColor = "";
-    let isSqueeze = false;
-
-    // Advanced OI & Premium/Discount integration
-    if (fib50 && price > fib50 && liveOrderFlow.oiTrend === 'Decreasing' && cvdNet > 0) {
-        verdict = "à¦®à¦¾à¦°à§à¦•à§‡à¦Ÿ Premium Zone-à¦ à¦†à¦›à§‡ à¦•à¦¿à¦¨à§à¦¤à§ Open Interest à¦•à¦®à¦›à§‡! à¦à¦Ÿà¦¿ à¦°à¦¿à§Ÿà§‡à¦² à¦ªà¦¾à¦®à§à¦ª à¦¨à§Ÿ, à¦¬à¦°à¦‚ Short Squeeze (à¦«à§‡à¦• à¦ªà¦¾à¦®à§à¦ª)à¥¤ à¦¶à¦°à§à¦Ÿ à¦•à¦°à¦¾à¦° à¦œà¦¨à§à¦¯ à¦°à¦¿à¦œà§‡à¦•à¦¶à¦¨à§‡à¦° à¦…à¦ªà§‡à¦•à§à¦·à¦¾ à¦•à¦°à§à¦¨à¥¤";
-        verdictColor = "#f59e0b";
-        isSqueeze = true;
-    } else if (fib50 && price < fib50 && liveOrderFlow.oiTrend === 'Decreasing' && cvdNet < 0) {
-        verdict = "à¦®à¦¾à¦°à§à¦•à§‡à¦Ÿ Discount Zone-à¦ à¦†à¦›à§‡ à¦•à¦¿à¦¨à§à¦¤à§ Open Interest à¦•à¦®à¦›à§‡! à¦à¦Ÿà¦¿ à¦°à¦¿à§Ÿà§‡à¦² à¦¡à¦¾à¦®à§à¦ª à¦¨à§Ÿ, à¦¬à¦°à¦‚ Long Liquidation (à¦«à§‡à¦• à¦¡à¦¾à¦®à§à¦ª)à¥¤ à¦²à¦‚ à¦•à¦°à¦¾à¦° à¦œà¦¨à§à¦¯ à¦¸à¦¾à¦ªà§‹à¦°à§à¦Ÿ à¦¬à¦¾à¦‰à¦¨à§à¦¸à§‡à¦° à¦…à¦ªà§‡à¦•à§à¦·à¦¾ à¦•à¦°à§à¦¨à¥¤";
-        verdictColor = "#f59e0b";
-        isSqueeze = true;
-    } else if (!isSqueeze) {
-        if (bullishScore > bearishScore + 1) {
-            verdict = "à¦‡à¦¨à¦¸à§à¦Ÿà¦¿à¦Ÿà¦¿à¦‰à¦¶à¦¨à¦¾à¦² à¦…à¦°à§à¦¡à¦¾à¦° à¦«à§à¦²à§‹ à¦¬à§à¦²à¦¿à¦¶à¥¤ à¦ªà§à¦°à¦¾à¦‡à¦¸ Discount Zone-à¦ à¦¥à¦¾à¦•à¦²à§‡ à¦²à¦‚ (Long) à¦¸à§‡à¦Ÿà¦†à¦ª à¦¨à¦¿à¦¤à§‡ à¦ªà¦¾à¦°à§‡à¦¨à¥¤";
-            verdictColor = "var(--buy)";
-        } else if (bearishScore > bullishScore + 1) {
-            verdict = "à¦‡à¦¨à¦¸à§à¦Ÿà¦¿à¦Ÿà¦¿à¦‰à¦¶à¦¨à¦¾à¦² à¦…à¦°à§à¦¡à¦¾à¦° à¦«à§à¦²à§‹ à¦¬à¦¿à§Ÿà¦¾à¦°à¦¿à¦¶à¥¤ à¦ªà§à¦°à¦¾à¦‡à¦¸ Premium Zone-à¦ à¦¥à¦¾à¦•à¦²à§‡ à¦¶à¦°à§à¦Ÿ (Short) à¦¸à§‡à¦Ÿà¦†à¦ª à¦¨à¦¿à¦¤à§‡ à¦ªà¦¾à¦°à§‡à¦¨à¥¤";
-            verdictColor = "var(--sell)";
-        } else {
-            verdict = "à¦®à¦¾à¦°à§à¦•à§‡à¦Ÿ à¦¸à¦¾à¦‡à¦¡à¦“à§Ÿà§‡à¦œ à¦¬à¦¾ à¦•à¦¨à¦«à¦¿à¦‰à¦œà¦¿à¦‚à¥¤ à¦•à§‹à¦¨à§‹ à¦•à§à¦²à¦¿à§Ÿà¦¾à¦° à¦¡à¦¾à¦‡à¦°à§‡à¦•à¦¶à¦¨ à¦¨à§‡à¦‡, à¦Ÿà§à¦°à§‡à¦¡ à¦¥à§‡à¦•à§‡ à¦¦à§‚à¦°à§‡ à¦¥à¦¾à¦•à§à¦¨à¥¤";
-            verdictColor = "#9ca3af";
-        }
-    }
-    
-    html += `<br><hr style="border-color:#334155; margin:10px 0;"><strong style="font-size:1.1em;">&#128161; à¦šà§‚à§œà¦¾à¦¨à§à¦¤ à¦¸à¦¿à¦¦à§à¦§à¦¾à¦¨à§à¦¤ (Verdict):</strong> <span style="color:${verdictColor}; font-weight:bold;">${verdict}</span><br>`;
-
-    return html;
-}
-
-app.post('/api/jarvis-ai', async (req, res) => {
-    try {
-        const apiKey = process.env.GEMINI_API_KEY;
-        if (!apiKey) {
-            return res.status(400).json({ error: "GEMINI_API_KEY environment variable is not set." });
-        }
-        
-        const { stats, tf, currentPrice, cvdData, swingHighs, swingLows, instZones, signal, volatility, imbalance } = req.body;
-        
-        const support = swingLows && swingLows.length > 0 ? swingLows[swingLows.length-1].price.toFixed(2) : 'N/A';
-        const resistance = swingHighs && swingHighs.length > 0 ? swingHighs[swingHighs.length-1].price.toFixed(2) : 'N/A';
-        const liqPools = instZones && instZones.length > 0 ? instZones.map(z => `$${z.price.toFixed(2)} (${z.type})`).join(', ') : 'None detected';
-        
-        const formatSpoofStats = (statsObj) => {
-            if(!statsObj) return 'No spoofing data';
-            let out = '';
-            ['15m', '1h', '4h'].forEach(t => {
-                if(statsObj[t]) {
-                    const s = statsObj[t];
-                    out += `[${t}] Buy Walls: $${(s.totalBids/1e6).toFixed(1)}M (Real: ${(s.realBids/1e6).toFixed(1)}M, Fake: ${(s.fakeBids/1e6).toFixed(1)}M) | Sell Walls: $${(s.totalAsks/1e6).toFixed(1)}M (Real: ${(s.realAsks/1e6).toFixed(1)}M, Fake: ${(s.fakeAsks/1e6).toFixed(1)}M)\n`;
-                }
-            });
-            return out;
-        };
-
-        const prompt = `You are JARVIS, an expert, aggressive, and highly analytical crypto order flow analyst.
-CRITICAL RULES:
-1. DO NOT act like a textbook.
-2. Focus heavily on Fake vs Real Walls and CVD to detect if Whales are Spoofing to set a TRAP for retail traders.
-3. DIVERGENCE RULES: If Price is at resistance but CVD is highly negative, it's a FAKE PUMP (Trap). If Price is at support but CVD is positive, it's a FAKE DUMP (Trap).
-4. MULTI-TIMEFRAME ANALYSIS (MTFA): Compare the 15m (micro) spoofing vs 1h/4h (macro) spoofing to detect larger institutional trends.
-5. Provide a "Trap Probability Score" (e.g. Trap Probability: 85%) based on the ratio of Fake walls and CVD divergence.
-6. Reply entirely in Bengali (Ã Â¦Â¬Ã Â¦Â¾Ã Â¦â€šÃ Â¦Â²Ã Â¦Â¾) with a sharp, professional tone.
-7. Output valid HTML using <strong> and <span style="color:var(--buy)"> for bullish/support or <span style="color:var(--sell)"> for bearish/resistance. No markdown backticks.
-8. Keep it concise (4-5 sentences max).
-
-LIVE MARKET DATA:
-Timeframe Focus: ${tf} | Current Price: $${currentPrice}
-Volatility Status: ${volatility ? volatility.status + ' (' + volatility.stdDevPct.toFixed(2) + '%)' : 'N/A'}
-Order Book Imbalance: ${imbalance ? imbalance.status + ' (Bids: ' + imbalance.bidRatio.toFixed(1) + '%, Asks: ' + imbalance.askRatio.toFixed(1) + '%)' : 'N/A'}
-Immediate Resistance: $${resistance} | Immediate Support: $${support}
-Institutional Liquidity Pools: ${liqPools}
-CVD (Net Orders): ${cvdData ? (cvdData.netCvd > 0 ? '+'+cvdData.netCvd.toFixed(2)+' BTC Bought' : cvdData.netCvd.toFixed(2)+' BTC Sold') : 'N/A'}
-
-MULTI-TIMEFRAME SPOOFING DATA:
-${formatSpoofStats(stats)}
-
-Based on this raw data, identify if there is a spoofing trap, if a volatility spike is coming (based on Squeeze), calculate the Trap Probability Score, and give a clear directional bias.`;
-
-        const models = [
-            'gemini-2.5-flash',
-            'gemini-2.5-flash-lite',
-            'gemini-2.0-flash',
-            'gemini-2.0-flash-lite',
-            'gemini-1.5-flash'
-        ];
-        let resultHtml = null;
-        
-        for (const model of models) {
-            try {
-                const response = await axios.post(
-                    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-                    { contents: [{ parts: [{ text: prompt }] }] },
-                    { timeout: 8000 }
-                );
-                
-                if (response.data && response.data.candidates && response.data.candidates.length > 0) {
-                    resultHtml = response.data.candidates[0].content.parts[0].text;
-                    break; // Success
-                }
-            } catch (modelErr) {
-                const errMsg = modelErr.response && modelErr.response.data ? JSON.stringify(modelErr.response.data) : modelErr.message;
-                console.warn(`AI Model ${model} failed:`, errMsg);
-                // Continue to next model
-            }
-        }
-        
-        if (resultHtml) {
-            // Clean up any markdown formatting the AI might have accidentally added
-            resultHtml = resultHtml.replace(/\`\`\`html/gi, '').replace(/\`\`\`/g, '').trim();
-            res.json({ success: true, html: resultHtml });
-        } else {
-            console.log("Falling back to Internal JARVIS Engine...");
-            const internalHtml = generateInternalJarvisAnalysis(req.body);
-            res.json({ success: true, html: internalHtml, internal: true });
-        }
-        
-    } catch(err) {
-        console.error("JARVIS AI Error:", err);
-        const internalHtml = generateInternalJarvisAnalysis(req.body);
-        res.json({ success: true, html: internalHtml, internal: true });
-    }
-});
-
-app.post('/api/jarvis-chat', async (req, res) => {
-    try {
-        const apiKey = process.env.GEMINI_API_KEY;
-        if (!apiKey) return res.status(400).json({ error: "GEMINI_API_KEY is not set." });
-        
-        const { history, stats, tf, currentPrice, cvdData, swingHighs, swingLows, instZones, signal, volatility, imbalance } = req.body;
-        
-        const support = swingLows && swingLows.length > 0 ? swingLows[swingLows.length-1].price.toFixed(2) : 'N/A';
-        const resistance = swingHighs && swingHighs.length > 0 ? swingHighs[swingHighs.length-1].price.toFixed(2) : 'N/A';
-        const liqPools = instZones && instZones.length > 0 ? instZones.map(z => `$${z.price.toFixed(2)} (${z.type})`).join(', ') : 'None detected';
-        
-        const formatSpoofStats = (statsObj) => {
-            if(!statsObj) return 'No spoofing data';
-            let out = '';
-            ['15m', '1h', '4h'].forEach(t => {
-                if(statsObj[t]) {
-                    const s = statsObj[t];
-                    out += `[${t}] Buy Walls: $${(s.totalBids/1e6).toFixed(1)}M (Real: ${(s.realBids/1e6).toFixed(1)}M, Fake: ${(s.fakeBids/1e6).toFixed(1)}M) | Sell Walls: $${(s.totalAsks/1e6).toFixed(1)}M (Real: ${(s.realAsks/1e6).toFixed(1)}M, Fake: ${(s.fakeAsks/1e6).toFixed(1)}M)\n`;
-                }
-            });
-            return out;
-        };
-        
-        const systemPrompt = `You are JARVIS, an elite algorithmic crypto order flow analyst.
-CRITICAL RULES:
-1. DO NOT act like a textbook.
-2. Focus intensely on Fake vs Real Walls and CVD to detect if Whales are Spoofing to trap retail traders. This is your primary job.
-3. DIVERGENCE RULES: If Price goes UP to resistance but CVD is NEGATIVE, it's a FAKE PUMP (Trap). If Price goes DOWN to support but CVD is POSITIVE, it's a FAKE DUMP (Trap).
-4. MULTI-TIMEFRAME ANALYSIS: Compare the 15m (micro) spoofing vs 1h/4h (macro) spoofing to detect larger trends.
-5. Provide a "Trap Probability Score" (e.g. Trap Probability: 85%).
-6. Reply entirely in Bengali (Ã Â¦Â¬Ã Â¦Â¾Ã Â¦â€šÃ Â¦Â²Ã Â¦Â¾).
-7. Output valid HTML (e.g. <strong>, <span style="color:var(--buy)">). No markdown backticks.
-
-LIVE MARKET DATA:
-Timeframe Focus: ${tf} | Price: $${currentPrice}
-Volatility Status: ${volatility ? volatility.status + ' (' + volatility.stdDevPct.toFixed(2) + '%)' : 'N/A'}
-Order Book Imbalance: ${imbalance ? imbalance.status + ' (Bids: ' + imbalance.bidRatio.toFixed(1) + '%, Asks: ' + imbalance.askRatio.toFixed(1) + '%)' : 'N/A'}
-Support: $${support} | Resistance: $${resistance}
-Liquidity Pools: ${liqPools}
-CVD (Net Orders): ${cvdData ? (cvdData.netCvd > 0 ? '+'+cvdData.netCvd.toFixed(2)+' BTC Bought' : cvdData.netCvd.toFixed(2)+' BTC Sold') : 'N/A'}
-
-MULTI-TIMEFRAME SPOOFING DATA:
-${formatSpoofStats(stats)}
-
-Based on this raw live context, answer the user's prompt as a pro order flow trader. Tell them if a spike is imminent based on volatility.`;
-
-        const models = [
-            'gemini-2.5-flash',
-            'gemini-2.5-flash-lite',
-            'gemini-2.0-flash',
-            'gemini-2.0-flash-lite',
-            'gemini-1.5-flash'
-        ];
-        let resultHtml = null;
-        
-        for (const model of models) {
-            try {
-                const response = await axios.post(
-                    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-                    { 
-                        systemInstruction: { parts: [{ text: systemPrompt }] },
-                        contents: history
-                    },
-                    { timeout: 10000 }
-                );
-                
-                if (response.data && response.data.candidates && response.data.candidates.length > 0) {
-                    resultHtml = response.data.candidates[0].content.parts[0].text;
-                    break;
-                }
-            } catch (modelErr) {
-                const errMsg = modelErr.response && modelErr.response.data ? JSON.stringify(modelErr.response.data) : modelErr.message;
-                console.warn(`Chat Model ${model} failed:`, errMsg);
-            }
-        }
-        
-        if (resultHtml) {
-            resultHtml = resultHtml.replace(/\`\`\`html/gi, '').replace(/\`\`\`/g, '').trim();
-            res.json({ success: true, text: resultHtml });
-        } else {
-            console.log("Falling back to Internal JARVIS Chat Engine...");
-            const lastMsg = history && history.length > 0 ? history[history.length - 1].parts[0].text : '';
-            const internalHtml = generateInternalJarvisAnalysis(req.body);
-            const chatHtml = `<strong>[Internal AI]</strong> Ã Â¦â€ Ã Â¦Â®Ã Â¦Â¿ Ã Â¦â€ Ã Â¦ÂªÃ Â¦Â¨Ã Â¦Â¾Ã Â¦Â° Ã Â¦ÂªÃ Â§ÂÃ Â¦Â°Ã Â¦Â¶Ã Â§ÂÃ Â¦Â¨ ("${lastMsg}") Ã Â¦Â¬Ã Â§ÂÃ Â¦ÂÃ Â¦Â¤Ã Â§â€¡ Ã Â¦ÂªÃ Â§â€¡Ã Â¦Â°Ã Â§â€¡Ã Â¦â€ºÃ Â¦Â¿, Ã Â¦â€¢Ã Â¦Â¿Ã Â¦Â¨Ã Â§ÂÃ Â¦Â¤Ã Â§Â API Ã Â¦Â²Ã Â¦Â¿Ã Â¦Â®Ã Â¦Â¿Ã Â¦Å¸ Ã Â¦Â¶Ã Â§â€¡Ã Â¦Â· Ã Â¦Â¹Ã Â¦â€œÃ Â§Å¸Ã Â¦Â¾Ã Â§Å¸ Ã Â¦Â¬Ã Â¦Â¿Ã Â¦Â¸Ã Â§ÂÃ Â¦Â¤Ã Â¦Â¾Ã Â¦Â°Ã Â¦Â¿Ã Â¦Â¤ Ã Â¦â€°Ã Â¦Â¤Ã Â§ÂÃ Â¦Â¤Ã Â¦Â° Ã Â¦Â¦Ã Â¦Â¿Ã Â¦Â¤Ã Â§â€¡ Ã Â¦ÂªÃ Â¦Â¾Ã Â¦Â°Ã Â¦â€ºÃ Â¦Â¿ Ã Â¦Â¨Ã Â¦Â¾Ã Â¥Â¤ Ã Â¦Â¤Ã Â¦Â¬Ã Â§â€¡ Ã Â¦Â¬Ã Â¦Â°Ã Â§ÂÃ Â¦Â¤Ã Â¦Â®Ã Â¦Â¾Ã Â¦Â¨ Ã Â¦Â®Ã Â¦Â¾Ã Â¦Â°Ã Â§ÂÃ Â¦â€¢Ã Â§â€¡Ã Â¦Å¸Ã Â§â€¡Ã Â¦Â° Ã Â¦â€¦Ã Â¦Â¬Ã Â¦Â¸Ã Â§ÂÃ Â¦Â¥Ã Â¦Â¾ Ã Â¦Â¹Ã Â¦Â²Ã Â§â€¹:<br><br>${internalHtml}`;
-            res.json({ success: true, text: chatHtml, internal: true });
-        }
-        
-    } catch(err) {
-        console.error("JARVIS Chat Error:", err);
-        const lastMsg = req.body.history && req.body.history.length > 0 ? req.body.history[req.body.history.length - 1].parts[0].text : '';
-        const internalHtml = generateInternalJarvisAnalysis(req.body);
-        const chatHtml = `<strong>[Internal AI]</strong> API Error! Ã Â¦Â¤Ã Â¦Â¬Ã Â§â€¡ Ã Â¦Â¬Ã Â¦Â°Ã Â§ÂÃ Â¦Â¤Ã Â¦Â®Ã Â¦Â¾Ã Â¦Â¨ Ã Â¦Â®Ã Â¦Â¾Ã Â¦Â°Ã Â§ÂÃ Â¦â€¢Ã Â§â€¡Ã Â¦Å¸Ã Â§â€¡Ã Â¦Â° Ã Â¦â€¦Ã Â¦Â¬Ã Â¦Â¸Ã Â§ÂÃ Â¦Â¥Ã Â¦Â¾ Ã Â¦Â¹Ã Â¦Â²Ã Â§â€¹:<br><br>${internalHtml}`;
-        res.json({ success: true, text: chatHtml, internal: true });
-    }
-});
-
 const liqCache = {};
 app.get('/api/liquidity', async(req,res)=>{
     try{
         const tf=req.query.timeframe||'15m';
         const now = Date.now();
-        if (liqCache[tf] && (now - liqCache[tf].time < 10000 || Date.now() < binanceCooldownUntil)) {
+        if (liqCache[tf] && now - liqCache[tf].time < 10000) {
             return res.json(liqCache[tf].data);
         }
         const[klRes,dpRes]=await Promise.all([
@@ -1295,8 +718,6 @@ app.get('/api/liquidity', async(req,res)=>{
         const instZones=findInstZones(klines);
         const signal=generateSignal(cp,swingHighs,swingLows,bids,asks,klines);
         const topAsks=clusterOB(asks,false), topBids=clusterOB(bids,true);
-        const volatility = calculateVolatility(klines);
-        const imbalance = calculateImbalance(bids, asks);
         
         // Calculate Timeframe Bias using detectContext
         const formattedCandles = klines.map(k => ({
@@ -1305,20 +726,17 @@ app.get('/api/liquidity', async(req,res)=>{
         const ctx = detectContext(formattedCandles, formattedCandles.length - 1);
         
         const rH=swingHighs[swingHighs.length-1]?.price, rL=swingLows[swingLows.length-1]?.price;
-        if(rH&&cp>rH) await dbRun(`INSERT INTO liquidity_history (symbol,type,price,description) VALUES (?,?,?,?)`,[SYMBOL,'BUY_SIDE_SWEEP',cp,`Swept above $${rH.toFixed(0)} Ã¢â‚¬â€ distribution possible.`]);
-        if(rL&&cp<rL) await dbRun(`INSERT INTO liquidity_history (symbol,type,price,description) VALUES (?,?,?,?)`,[SYMBOL,'SELL_SIDE_SWEEP',cp,`Swept below $${rL.toFixed(0)} Ã¢â‚¬â€ accumulation possible.`]);
+        if(rH&&cp>rH) await dbRun(`INSERT INTO liquidity_history (symbol,type,price,description) VALUES (?,?,?,?)`,[SYMBOL,'BUY_SIDE_SWEEP',cp,`Swept above $${rH.toFixed(0)} — distribution possible.`]);
+        if(rL&&cp<rL) await dbRun(`INSERT INTO liquidity_history (symbol,type,price,description) VALUES (?,?,?,?)`,[SYMBOL,'SELL_SIDE_SWEEP',cp,`Swept below $${rL.toFixed(0)} — accumulation possible.`]);
         if(signal?.signal!=='WAIT'&&signal?.entry) await dbRun(`INSERT INTO signals (symbol,signal,confidence,entry,stop_loss,take_profit,reason) VALUES (?,?,?,?,?,?,?)`,[SYMBOL,signal.signal,signal.confidence,signal.entry,signal.stop_loss,signal.take_profit,signal.reason]);
         const[history,sigHist,obHist]=await Promise.all([
             dbAll(`SELECT * FROM liquidity_history ORDER BY id DESC LIMIT 10`),
             dbAll(`SELECT * FROM signals ORDER BY id DESC LIMIT 5`),
-            OrderbookSnapshot.find().sort({ _id: -1 }).limit(20).lean()
+            dbAll(`SELECT * FROM orderbook_snapshots ORDER BY id DESC LIMIT 20`)
         ]);
         const responseData = {status:'success',symbol:SYMBOL,timeframe:tf,current_price:cp,signal,
             chart_liquidity:{swing_highs:swingHighs,swing_lows:swingLows},institutional_zones:instZones,
-            order_book_liquidity:{asks:topAsks,bids:topBids},history,signal_history:sigHist,ob_history:obHist, timeframe_bias: ctx,
-            volatility: volatility,
-            imbalance: imbalance
-        };
+            order_book_liquidity:{asks:topAsks,bids:topBids},history,signal_history:sigHist,ob_history:obHist, timeframe_bias: ctx};
         liqCache[tf] = { time: now, data: responseData };
         res.json(responseData);
     }catch(e){res.status(500).json({error:e.message});}
@@ -1425,7 +843,7 @@ app.get('/api/replay/range', async(req,res)=>{
     }catch(e){res.status(500).json({error:e.message});}
 });
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ BRAIN TRADING ENGINE (Self-Learning) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ─── BRAIN TRADING ENGINE (Self-Learning) ─────────────────────────────────
 
 async function analyzeFailedTrade(trade) {
     // 1. Fetch candles around the trade execution to see WHY it failed
@@ -1552,7 +970,7 @@ async function runBrainTrader() {
                             VALUES (?, ?, ?, ?, ?, ?, ?, 'OPEN', ?)`,
                             [symbol, tf, strat, ctx, entry, sl, tp, liveTime]);
                     console.log(`[Brain] Opened new paper trade: ${strat} ${isBuy?'LONG':'SHORT'}`);
-                    addBrainLog(`Ã°Å¸â€™Â¡ Setup Found: ${strat} (${isBuy?'LONG':'SHORT'}). Opened Paper Trade!`);
+                    addBrainLog(`💡 Setup Found: ${strat} (${isBuy?'LONG':'SHORT'}). Opened Paper Trade!`);
                 } else {
                     addBrainLog("Setup found, but another trade is already OPEN.");
                 }
@@ -1587,6 +1005,23 @@ app.get('/api/brain/insights', (req, res) => {
     });
 });
 
+// ─── LIVE ORDER FLOW & RETAIL TRAP TRACKING (WebSockets) ────────────────────
+let liveOrderFlow = {
+    whaleWallBid: null, // { price, qty }
+    whaleWallAsk: null, // { price, qty }
+    cvd: 0,
+    buyVol: 0,
+    sellVol: 0,
+    currentPrice: null,
+    trapAlert: null, // text alert string
+    stopLossZone: null, // text alert string
+    spoofAlert: null // text alert string
+};
+
+let lastWhaleWallBid = null;
+let lastWhaleWallAsk = null;
+
+let lastTradeId = 0;
 
 async function pollBinanceOrderFlow() {
     try {
@@ -1617,10 +1052,10 @@ async function pollBinanceOrderFlow() {
         
         // Spoofing detection
         if (lastWhaleWallBid && !liveOrderFlow.whaleWallBid && liveOrderFlow.currentPrice > lastWhaleWallBid.price) {
-            liveOrderFlow.spoofAlert = `Ã°Å¸Å¡Â¨ Fake Buy Wall Pulled: $${lastWhaleWallBid.price}. Possible Dump incoming!`;
+            liveOrderFlow.spoofAlert = `🚨 Fake Buy Wall Pulled: $${lastWhaleWallBid.price}. Possible Dump incoming!`;
         }
         if (lastWhaleWallAsk && !liveOrderFlow.whaleWallAsk && liveOrderFlow.currentPrice < lastWhaleWallAsk.price) {
-            liveOrderFlow.spoofAlert = `Ã°Å¸Å¡Â¨ Fake Sell Wall Pulled: $${lastWhaleWallAsk.price}. Possible Pump incoming!`;
+            liveOrderFlow.spoofAlert = `🚨 Fake Sell Wall Pulled: $${lastWhaleWallAsk.price}. Possible Pump incoming!`;
         }
         lastWhaleWallBid = liveOrderFlow.whaleWallBid;
         lastWhaleWallAsk = liveOrderFlow.whaleWallAsk;
@@ -1664,9 +1099,9 @@ async function pollBinanceOrderFlow() {
             
             // Trap Detection
             if (liveOrderFlow.cvd < -10 && liveOrderFlow.whaleWallBid && liveOrderFlow.currentPrice >= liveOrderFlow.whaleWallBid.price) {
-                liveOrderFlow.trapAlert = `Ã°Å¸â€Â´ Retail Trap Detected: Heavy Retail Selling (${Math.abs(liveOrderFlow.cvd).toFixed(2)} BTC), but Whale Buy Wall holding at $${liveOrderFlow.whaleWallBid.price}. Potential Reversal UP!`;
+                liveOrderFlow.trapAlert = `🔴 Retail Trap Detected: Heavy Retail Selling (${Math.abs(liveOrderFlow.cvd).toFixed(2)} BTC), but Whale Buy Wall holding at $${liveOrderFlow.whaleWallBid.price}. Potential Reversal UP!`;
             } else if (liveOrderFlow.cvd > 10 && liveOrderFlow.whaleWallAsk && liveOrderFlow.currentPrice <= liveOrderFlow.whaleWallAsk.price) {
-                liveOrderFlow.trapAlert = `Ã°Å¸â€Â´ Retail Trap Detected: Heavy Retail Buying (${liveOrderFlow.cvd.toFixed(2)} BTC), but Whale Sell Wall holding at $${liveOrderFlow.whaleWallAsk.price}. Potential Reversal DOWN!`;
+                liveOrderFlow.trapAlert = `🔴 Retail Trap Detected: Heavy Retail Buying (${liveOrderFlow.cvd.toFixed(2)} BTC), but Whale Sell Wall holding at $${liveOrderFlow.whaleWallAsk.price}. Potential Reversal DOWN!`;
             } else {
                 liveOrderFlow.trapAlert = "No traps detected.";
             }
@@ -1703,12 +1138,268 @@ async function pollBinanceOrderFlow() {
         if(brainLogs.length > 100) brainLogs.shift();
     }
 }
-// NOTE: pollBinanceOrderFlow() REST polling removed. Data now comes from WebSocket streams above.
+
+// Poll every 3 seconds
+setInterval(pollBinanceOrderFlow, 3000);
+pollBinanceOrderFlow();
 
 // Endpoint for Strategy Lab UI
 app.get('/api/orderflow', (req, res) => {
     res.json(liveOrderFlow);
 });
 
-app.listen(PORT, () => console.log(`[SERVER] Alpha-Flow SMC Brain v4 running on port ${PORT}`));
+// Periodic DB Save (every 1 minute)
+setInterval(async () => {
+    if (liveOrderFlow.whaleWallBid && liveOrderFlow.whaleWallAsk) {
+        db.run(`INSERT INTO orderbook_snapshots (symbol, bid_price, bid_volume, ask_price, ask_volume, spread) VALUES (?, ?, ?, ?, ?, ?)`,
+            [SYMBOL, liveOrderFlow.whaleWallBid.price, liveOrderFlow.buyVol, liveOrderFlow.whaleWallAsk.price, liveOrderFlow.sellVol, liveOrderFlow.whaleWallAsk.price - liveOrderFlow.whaleWallBid.price]);
+        
+        // Reset volume counters after snapshot
+        liveOrderFlow.buyVol = 0;
+        liveOrderFlow.sellVol = 0;
+    }
+    
+    // Auto-cleanup: Keep only 48 hours of orderbook snapshots to prevent DB bloat
+    try {
+        await dbRun(`DELETE FROM orderbook_snapshots WHERE timestamp <= datetime('now', '-48 hours')`);
+    } catch(err) {
+        console.error("Cleanup error:", err);
+    }
+}, 60000);
 
+
+// --- Open Interest (OI) & Killzone Logic ---
+function getKillzone() {
+    const hours = new Date().getUTCHours();
+    if (hours >= 1 && hours < 7) return 'Asian Killzone 🏯 (Low Volatility, Fakeouts)';
+    if (hours >= 7 && hours < 12) return 'London Killzone 💂 (Trend Starts, High Volatility)';
+    if (hours >= 13 && hours < 16) return 'New York Killzone 🗽 (Maximum Volatility, Reversals)';
+    return 'No Active Killzone (Choppy Market)';
+}
+
+liveOrderFlow.openInterest = 0;
+liveOrderFlow.oiTrend = 'Neutral';
+
+async function fetchOpenInterest() {
+    try {
+        const response = await axios.get(`https://fapi.binance.com/fapi/v1/openInterest?symbol=BTCUSDT`, { timeout: 3000 });
+        const oi = parseFloat(response.data.openInterest);
+        if (liveOrderFlow.openInterest) {
+            if (oi > liveOrderFlow.openInterest) liveOrderFlow.oiTrend = 'Increasing';
+            else if (oi < liveOrderFlow.openInterest) liveOrderFlow.oiTrend = 'Decreasing';
+        }
+        liveOrderFlow.openInterest = oi;
+    } catch(err) {
+        console.error('Error fetching OI:', err.message);
+    }
+}
+setInterval(fetchOpenInterest, 30000);
+fetchOpenInterest();
+
+// --- Internal JARVIS AI Engine ---
+function generateInternalJarvisAnalysis(data) {
+    const price    = liveOrderFlow.currentPrice || data.currentPrice;
+    const cvdNet   = liveOrderFlow.cvd || (data.cvdData ? data.cvdData.netCvd : 0);
+    const wsBid    = liveOrderFlow.whaleWallBid;
+    const wsAsk    = liveOrderFlow.whaleWallAsk;
+    const wsTrap   = liveOrderFlow.trapAlert;
+    const wsSpoof  = liveOrderFlow.spoofAlert;
+    const wsSLZone = liveOrderFlow.stopLossZone;
+    const { swingHighs, swingLows, volatility, imbalance } = data;
+    const support    = swingLows  && swingLows.length  > 0 ? swingLows[swingLows.length-1].price.toFixed(2)  : 'N/A';
+    const resistance = swingHighs && swingHighs.length > 0 ? swingHighs[swingHighs.length-1].price.toFixed(2) : 'N/A';
+
+    const fib50 = (support !== 'N/A' && resistance !== 'N/A') ? (parseFloat(resistance) + parseFloat(support)) / 2 : null;
+    let pdZone = '';
+    if (fib50 && price) {
+        if (price > fib50) pdZone = `<span style="color:var(--sell)">Premium Zone (High Risk to Buy)</span>`;
+        else pdZone = `<span style="color:var(--buy)">Discount Zone (High Risk to Sell)</span>`;
+    }
+
+    let html = `<strong>[Internal AI]</strong> ${new Date().toLocaleTimeString()} &mdash; লাইভ মার্কেট অ্যানালাইসিস:<br>`;
+    html += `&#128336; <strong>Session:</strong> ${getKillzone()}<br><br>`;
+    if (price) html += `Price: <strong>$${parseFloat(price).toLocaleString()}</strong> | Zone: ${pdZone}<br>`;
+    if (liveOrderFlow.openInterest) {
+        let oiColor = liveOrderFlow.oiTrend === 'Increasing' ? 'var(--buy)' : (liveOrderFlow.oiTrend === 'Decreasing' ? 'var(--sell)' : '#fff');
+        html += `Open Interest: <strong>${liveOrderFlow.openInterest.toLocaleString()}</strong> (<span style="color:${oiColor}">${liveOrderFlow.oiTrend}</span>)<br>`;
+    }
+
+    // Volatility
+    if (volatility && volatility.stdDevPct <= 0.15) {
+        html += `<span style="color:#f59e0b">&#9889; Squeeze (${volatility.stdDevPct.toFixed(2)}%) &mdash; বড় Spike হতে পারে!</span><br>`;
+    } else if (volatility && volatility.stdDevPct > 0.40) {
+        html += `<strong>&#128293; High Volatility (${volatility.stdDevPct.toFixed(2)}%)</strong> &mdash; মার্কেটে বড় ধরনের মুভ চলছে<br>`;
+    } else if (volatility) {
+        html += `Volatility স্বাভাবিক আছে (${volatility.stdDevPct.toFixed(2)}%).<br>`;
+    }
+
+    // Whale Walls from WebSocket
+    if (wsBid) html += `&#128011; <span style="color:var(--buy)">Whale Buy Wall: $${wsBid.price.toFixed(2)} (${wsBid.qty.toFixed(2)} BTC) &mdash; নিচে বড় সাপোর্ট আছে</span><br>`;
+    if (wsAsk) html += `&#128011; <span style="color:var(--sell)">Whale Sell Wall: $${wsAsk.price.toFixed(2)} (${wsAsk.qty.toFixed(2)} BTC) &mdash; উপরে বড় রেসিস্টেন্স আছে</span><br>`;
+    if (wsSpoof) html += `&#128680; <span style="color:var(--sell)">${wsSpoof}</span><br>`;
+
+    // Order Book Imbalance
+    let isBullishBias = false;
+    if (imbalance) {
+        if (imbalance.bidRatio > 65) {
+            html += `Order Book: <span style="color:var(--buy)">Extreme Buy Pressure (${imbalance.bidRatio.toFixed(1)}%) &mdash; বায়াররা স্ট্রং পজিশনে আছে</span><br>`;
+            isBullishBias = true;
+        } else if (imbalance.askRatio > 65) {
+            html += `Order Book: <span style="color:var(--sell)">Extreme Sell Pressure (${imbalance.askRatio.toFixed(1)}%) &mdash; সেলাররা স্ট্রং পজিশনে আছে</span><br>`;
+        } else {
+            html += `Order Book: নিউট্রাল বা স্বাভাবিক অবস্থায় আছে<br>`;
+        }
+    }
+
+    // CVD from WebSocket
+    if (cvdNet > 10) {
+        html += `CVD: <span style="color:var(--buy)">+${cvdNet.toFixed(2)} BTC bought</span> &mdash; স্পট মার্কেটে প্রচুর অ্যাগ্রেসিভ বাইং হচ্ছে।<br>`;
+    } else if (cvdNet < -10) {
+        html += `CVD: <span style="color:var(--sell)">${cvdNet.toFixed(2)} BTC sold</span> &mdash; স্পট মার্কেটে প্রচুর অ্যাগ্রেসিভ সেলিং হচ্ছে।<br>`;
+    } else {
+        html += `CVD: নিউট্রাল বা স্বাভাবিক।<br>`;
+    }
+
+    // Trap Probability
+    let trapProb = 20, trapType = 'None';
+    if (isBullishBias && cvdNet < -5) {
+        trapProb = 85; trapType = 'FAKE PUMP (Bull Trap)';
+        html += `<br>&#9888;&#65039; Buy Pressure + Negative CVD = <span style="color:var(--sell)">${trapType}</span>. Trap Probability: <strong>${trapProb}%</strong><br>`;
+    } else if (!isBullishBias && cvdNet > 5) {
+        trapProb = 85; trapType = 'FAKE DUMP (Bear Trap)';
+        html += `<br>&#9888;&#65039; Sell Pressure + Positive CVD = <span style="color:var(--buy)">${trapType}</span>. Trap Probability: <strong>${trapProb}%</strong><br>`;
+    } else {
+        html += `<br>&#9989; কোনো ক্লিয়ার ট্র্যাপ নেই। ${wsSLZone || ''}<br>`;
+    }
+
+    // Live trap alert from WebSocket
+    if (wsTrap && !wsTrap.includes('No traps')) {
+        html += `<br>&#128308; Live Alert: <span style="color:var(--sell)">${wsTrap}</span><br>`;
+    }
+
+    // Final Verdict Calculation (Anti-Retail SMC)
+    let bullishScore = 0;
+    let bearishScore = 0;
+    
+    if (imbalance && imbalance.bidRatio > 65) bullishScore++;
+    if (imbalance && imbalance.askRatio > 65) bearishScore++;
+    if (cvdNet > 10) bullishScore++;
+    if (cvdNet < -10) bearishScore++;
+    if (wsBid) bullishScore++;
+    if (wsAsk) bearishScore++;
+    if (trapType === 'FAKE DUMP (Bear Trap)') bullishScore += 2;
+    if (trapType === 'FAKE PUMP (Bull Trap)') bearishScore += 2;
+    
+    let verdict = "";
+    let verdictColor = "";
+    let isSqueeze = false;
+
+    // Advanced OI & Premium/Discount integration
+    if (fib50 && price > fib50 && liveOrderFlow.oiTrend === 'Decreasing' && cvdNet > 0) {
+        verdict = "মার্কেট Premium Zone-এ আছে কিন্তু Open Interest কমছে! এটি রিয়েল পাম্প নয়, বরং Short Squeeze (ফেক পাম্প)। শর্ট করার জন্য রিজেকশনের অপেক্ষা করুন।";
+        verdictColor = "#f59e0b";
+        isSqueeze = true;
+    } else if (fib50 && price < fib50 && liveOrderFlow.oiTrend === 'Decreasing' && cvdNet < 0) {
+        verdict = "মার্কেট Discount Zone-এ আছে কিন্তু Open Interest কমছে! এটি রিয়েল ডাম্প নয়, বরং Long Liquidation (ফেক ডাম্প)। লং করার জন্য সাপোর্ট বাউন্সের অপেক্ষা করুন।";
+        verdictColor = "#f59e0b";
+        isSqueeze = true;
+    } else if (!isSqueeze) {
+        if (bullishScore > bearishScore + 1) {
+            verdict = "ইনস্টিটিউশনাল অর্ডার ফ্লো বুলিশ। প্রাইস Discount Zone-এ থাকলে লং (Long) সেটআপ নিতে পারেন।";
+            verdictColor = "var(--buy)";
+        } else if (bearishScore > bullishScore + 1) {
+            verdict = "ইনস্টিটিউশনাল অর্ডার ফ্লো বিয়ারিশ। প্রাইস Premium Zone-এ থাকলে শর্ট (Short) সেটআপ নিতে পারেন।";
+            verdictColor = "var(--sell)";
+        } else {
+            verdict = "মার্কেট সাইডওয়েজ বা কনফিউজিং। কোনো ক্লিয়ার ডাইরেকশন নেই, ট্রেড থেকে দূরে থাকুন।";
+            verdictColor = "#9ca3af";
+        }
+    }
+    
+    html += `<br><hr style="border-color:#334155; margin:10px 0;"><strong style="font-size:1.1em;">&#128161; চূড়ান্ত সিদ্ধান্ত (Verdict):</strong> <span style="color:${verdictColor}; font-weight:bold;">${verdict}</span><br>`;
+
+    return html;
+}
+
+app.post('/api/jarvis-ai', async (req, res) => {
+    try {
+        const apiKey = process.env.GEMINI_API_KEY;
+        if (!apiKey) return res.status(400).json({ error: "GEMINI_API_KEY environment variable is not set." });
+        
+        const prompt = "You are JARVIS. Give a 3 sentence market analysis in Bengali.";
+        const models = ['gemini-2.5-flash', 'gemini-2.0-flash'];
+        let resultHtml = null;
+        for (const model of models) {
+            try {
+                const response = await axios.post(
+                    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+                    { contents: [{ parts: [{ text: prompt }] }] },
+                    { timeout: 5000 }
+                );
+                if (response.data && response.data.candidates) {
+                    resultHtml = response.data.candidates[0].content.parts[0].text;
+                    break;
+                }
+            } catch (err) {}
+        }
+        
+        if (resultHtml) {
+            resultHtml = resultHtml.replace(/\`\`\`html/gi, '').replace(/\`\`\`/g, '').trim();
+            res.json({ success: true, html: resultHtml });
+        } else {
+            console.log("Falling back to Internal JARVIS Engine...");
+            const internalHtml = generateInternalJarvisAnalysis(req.body);
+            res.json({ success: true, html: internalHtml, internal: true });
+        }
+        
+    } catch(err) {
+        console.error("JARVIS AI Error:", err);
+        const internalHtml = generateInternalJarvisAnalysis(req.body);
+        res.json({ success: true, html: internalHtml, internal: true });
+    }
+});
+
+app.post('/api/jarvis-chat', async (req, res) => {
+    try {
+        const { history } = req.body;
+        const apiKey = process.env.GEMINI_API_KEY;
+        if (!apiKey) return res.status(400).json({ error: "GEMINI_API_KEY environment variable is not set." });
+        
+        const internalHtml = generateInternalJarvisAnalysis(req.body);
+        const prompt = "Reply to the user in Bengali.";
+        
+        let resultHtml = null;
+        for (const model of ['gemini-2.5-flash', 'gemini-2.0-flash']) {
+            try {
+                const response = await axios.post(
+                    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+                    { contents: [{ parts: [{ text: prompt }] }] },
+                    { timeout: 5000 }
+                );
+                if (response.data && response.data.candidates) {
+                    resultHtml = response.data.candidates[0].content.parts[0].text;
+                    break;
+                }
+            } catch (err) {}
+        }
+
+        if (resultHtml) {
+            resultHtml = resultHtml.replace(/\`\`\`html/gi, '').replace(/\`\`\`/g, '').trim();
+            res.json({ success: true, text: resultHtml });
+        } else {
+            console.log("Falling back to Internal JARVIS Chat Engine...");
+            const lastMsg = history && history.length > 0 ? history[history.length - 1].parts[0].text : '';
+            const chatHtml = `<strong>[Internal AI]</strong> যেহেতু আমি লাইভ মার্কেট ডাটা পড়ছি ("${lastMsg}") এবং আপনার দেওয়া API কী কাজ করছে না, আমি শুধু বর্তমান মার্কেটের অবস্থা বলতে পারবো। রিয়ে-টাইম ডাটা অনুযায়ী নিচের পয়েন্টগুলো দেখুন:<br><br>${internalHtml}`;
+            res.json({ success: true, text: chatHtml, internal: true });
+        }
+        
+    } catch(err) {
+        console.error("JARVIS Chat Error:", err);
+        const internalHtml = generateInternalJarvisAnalysis(req.body);
+        const chatHtml = `<strong>[Internal AI]</strong> API Error! তবে আমি লাইভ ডাটা থেকে বর্তমান মার্কেট অনুযায়ী নিচের অ্যানালাইসিসটি তৈরি করেছি:<br><br>${internalHtml}`;
+        res.json({ success: true, text: chatHtml, internal: true });
+    }
+});
+
+
+app.listen(PORT, () => console.log(`[SERVER] Alpha-Flow SMC Brain v4 running on port ${PORT}`));
