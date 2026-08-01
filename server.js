@@ -932,6 +932,7 @@ app.get('/api/btc-radar', async(req, res) => {
 
 // Internal JARVIS AI Engine (Fallback) â€” always reads from live WebSocket data
 function generateInternalJarvisAnalysis(data) {
+    // Always pull latest live data from WebSocket streams
     const price    = liveOrderFlow.currentPrice || data.currentPrice;
     const cvdNet   = liveOrderFlow.cvd || (data.cvdData ? data.cvdData.netCvd : 0);
     const wsBid    = liveOrderFlow.whaleWallBid;
@@ -942,52 +943,65 @@ function generateInternalJarvisAnalysis(data) {
     const { swingHighs, swingLows, volatility, imbalance } = data;
     const support    = swingLows  && swingLows.length  > 0 ? swingLows[swingLows.length-1].price.toFixed(2)  : 'N/A';
     const resistance = swingHighs && swingHighs.length > 0 ? swingHighs[swingHighs.length-1].price.toFixed(2) : 'N/A';
-    let html = `<strong>[Internal AI]</strong> ${new Date().toLocaleTimeString()} â€” Live Analysis:<br><br>`;
-    if (price) html += `Current Price: <strong>$${parseFloat(price).toLocaleString()}</strong> | Support: <strong>$${support}</strong> | Resistance: <strong>$${resistance}</strong><br>`;
+
+    let html = `<strong>[Internal AI]</strong> ${new Date().toLocaleTimeString()} &mdash; Live Market Analysis:<br><br>`;
+    if (price) html += `Price: <strong>$${parseFloat(price).toLocaleString()}</strong> | Support: <strong>$${support}</strong> | Resistance: <strong>$${resistance}</strong><br>`;
+
+    // Volatility
     if (volatility && volatility.stdDevPct <= 0.15) {
-        html += `<span style="color:#f59e0b">Squeeze (${volatility.stdDevPct.toFixed(2)}%)</span> â€” à¦¬à¦¡à¦¼ Spike à¦†à¦¸à¦¾à¦° à¦¸à¦®à§à¦­à¦¾à¦¬à¦¨à¦¾!<br>`;
+        html += `<span style="color:#f59e0b">&#9889; Squeeze (${volatility.stdDevPct.toFixed(2)}%) &mdash; Big Spike incoming!</span><br>`;
     } else if (volatility && volatility.stdDevPct > 0.40) {
-        html += `<strong>High Volatility (${volatility.stdDevPct.toFixed(2)}%)</strong> â€” à¦ªà§à¦°à¦¾à¦‡à¦¸ à¦¦à§à¦°à§à¦¤ à¦®à§à¦­ à¦•à¦°à¦›à§‡à¥¤<br>`;
+        html += `<strong>&#128293; High Volatility (${volatility.stdDevPct.toFixed(2)}%)</strong> &mdash; Price moving fast.<br>`;
     } else if (volatility) {
-        html += `Volatility à¦¸à§à¦¬à¦¾à¦­à¦¾à¦¬à¦¿à¦• (${volatility.stdDevPct.toFixed(2)}%)à¥¤<br>`;
+        html += `Volatility Normal (${volatility.stdDevPct.toFixed(2)}%).<br>`;
     }
-    if (wsBid) html += `ðŸ‹ <span style="color:var(--buy)">Whale Buy Wall: $${wsBid.price.toFixed(2)} (${wsBid.qty.toFixed(2)} BTC)</span><br>`;
-    if (wsAsk) html += `ðŸ‹ <span style="color:var(--sell)">Whale Sell Wall: $${wsAsk.price.toFixed(2)} (${wsAsk.qty.toFixed(2)} BTC)</span><br>`;
-    if (wsSpoof) html += `ðŸš¨ <span style="color:var(--sell)">${wsSpoof}</span><br>`;
+
+    // Whale Walls from WebSocket
+    if (wsBid) html += `&#128011; <span style="color:var(--buy)">Whale Buy Wall: $${wsBid.price.toFixed(2)} (${wsBid.qty.toFixed(2)} BTC) &mdash; Institutional buy zone active.</span><br>`;
+    if (wsAsk) html += `&#128011; <span style="color:var(--sell)">Whale Sell Wall: $${wsAsk.price.toFixed(2)} (${wsAsk.qty.toFixed(2)} BTC) &mdash; Institutional sell zone active.</span><br>`;
+    if (wsSpoof) html += `&#128680; <span style="color:var(--sell)">${wsSpoof}</span><br>`;
+
+    // Order Book Imbalance
     let isBullishBias = false;
     if (imbalance) {
         if (imbalance.bidRatio > 65) {
-            html += `Order Book: <span style="color:var(--buy)">Extreme Buy Pressure (${imbalance.bidRatio.toFixed(1)}%)</span> â€” Spike à¦‰à¦ªà¦°à§‡ à¦¯à¦¾à¦“à¦¯à¦¼à¦¾à¦° à¦¸à¦®à§à¦­à¦¾à¦¬à¦¨à¦¾à¥¤<br>`;
+            html += `Order Book: <span style="color:var(--buy)">Extreme Buy Pressure (${imbalance.bidRatio.toFixed(1)}%) &mdash; Spike likely UP.</span><br>`;
             isBullishBias = true;
         } else if (imbalance.askRatio > 65) {
-            html += `Order Book: <span style="color:var(--sell)">Extreme Sell Pressure (${imbalance.askRatio.toFixed(1)}%)</span> â€” Dump à¦à¦° à¦ªà§à¦°à¦¸à§à¦¤à§à¦¤à¦¿à¥¤<br>`;
+            html += `Order Book: <span style="color:var(--sell)">Extreme Sell Pressure (${imbalance.askRatio.toFixed(1)}%) &mdash; Dump likely.</span><br>`;
         } else {
-            html += `Order Book à¦¬à§à¦¯à¦¾à¦²à§‡à¦¨à§à¦¸à¦¡à¥¤<br>`;
+            html += `Order Book: Balanced. No clear directional bias.<br>`;
         }
     }
+
+    // CVD from WebSocket
     if (cvdNet > 10) {
-        html += `CVD: <span style="color:var(--buy)">+${cvdNet.toFixed(2)} BTC bought</span> â€” Aggressive buying à¦šà¦²à¦›à§‡à¥¤<br>`;
+        html += `CVD: <span style="color:var(--buy)">+${cvdNet.toFixed(2)} BTC bought</span> &mdash; Aggressive buying pressure.<br>`;
     } else if (cvdNet < -10) {
-        html += `CVD: <span style="color:var(--sell)">${cvdNet.toFixed(2)} BTC sold</span> â€” Aggressive selling à¦šà¦²à¦›à§‡à¥¤<br>`;
+        html += `CVD: <span style="color:var(--sell)">${cvdNet.toFixed(2)} BTC sold</span> &mdash; Aggressive selling pressure.<br>`;
     } else {
-        html += `CVD à¦¨à¦¿à¦°à¦ªà§‡à¦•à§à¦·à¥¤<br>`;
+        html += `CVD: Neutral.<br>`;
     }
+
+    // Trap Probability
     let trapProb = 20, trapType = 'None';
     if (isBullishBias && cvdNet < -5) {
         trapProb = 85; trapType = 'FAKE PUMP (Bull Trap)';
-        html += `<br>âš ï¸ à¦¬à¦¾à¦‡ à¦ªà§à¦°à§‡à¦¶à¦¾à¦° + Negative CVD = <span style="color:var(--sell)">${trapType}</span>. Trap: <strong>${trapProb}%</strong><br>`;
+        html += `<br>&#9888;&#65039; Buy Pressure + Negative CVD = <span style="color:var(--sell)">${trapType}</span>. Trap Probability: <strong>${trapProb}%</strong><br>`;
     } else if (!isBullishBias && cvdNet > 5) {
         trapProb = 85; trapType = 'FAKE DUMP (Bear Trap)';
-        html += `<br>âš ï¸ à¦¸à§‡à¦² à¦ªà§à¦°à§‡à¦¶à¦¾à¦° + Positive CVD = <span style="color:var(--buy)">${trapType}</span>. Trap: <strong>${trapProb}%</strong><br>`;
+        html += `<br>&#9888;&#65039; Sell Pressure + Positive CVD = <span style="color:var(--buy)">${trapType}</span>. Trap Probability: <strong>${trapProb}%</strong><br>`;
     } else {
-        html += `<br>âœ… à¦•à§‹à¦¨à§‹ à¦•à§à¦²à¦¿à¦¯à¦¼à¦¾à¦° à¦Ÿà§à¦°à§à¦¯à¦¾à¦ª à¦¨à§‡à¦‡à¥¤ ${wsSLZone || ''}<br>`;
+        html += `<br>&#9989; No clear trap detected. ${wsSLZone || ''}<br>`;
     }
+
+    // Live trap alert from WebSocket
     if (wsTrap && !wsTrap.includes('No traps')) {
-        html += `<br>ðŸ”´ Live: <span style="color:var(--sell)">${wsTrap}</span><br>`;
+        html += `<br>&#128308; Live Alert: <span style="color:var(--sell)">${wsTrap}</span><br>`;
     }
+
     return html;
 }
-
 
 app.post('/api/jarvis-ai', async (req, res) => {
     try {
