@@ -746,24 +746,39 @@ app.post('/api/jarvis-ai', async (req, res) => {
         const resistance = swingHighs && swingHighs.length > 0 ? swingHighs[swingHighs.length-1].price.toFixed(2) : 'N/A';
         const liqPools = instZones && instZones.length > 0 ? instZones.map(z => `$${z.price.toFixed(2)} (${z.type})`).join(', ') : 'None detected';
         
-        const prompt = `You are JARVIS, an expert, aggressive, and highly analytical crypto algorithmic trader.
+        const formatSpoofStats = (statsObj) => {
+            if(!statsObj) return 'No spoofing data';
+            let out = '';
+            ['15m', '1h', '4h'].forEach(t => {
+                if(statsObj[t]) {
+                    const s = statsObj[t];
+                    out += `[${t}] Buy Walls: $${(s.totalBids/1e6).toFixed(1)}M (Real: ${(s.realBids/1e6).toFixed(1)}M, Fake: ${(s.fakeBids/1e6).toFixed(1)}M) | Sell Walls: $${(s.totalAsks/1e6).toFixed(1)}M (Real: ${(s.realAsks/1e6).toFixed(1)}M, Fake: ${(s.fakeAsks/1e6).toFixed(1)}M)\n`;
+                }
+            });
+            return out;
+        };
+
+        const prompt = `You are JARVIS, an expert, aggressive, and highly analytical crypto order flow analyst.
 CRITICAL RULES:
-- DO NOT act like a textbook. Do not define what volume, chart patterns, or liquidity hunts are. I already know.
-- Only analyze the CURRENT data provided below.
-- Reply entirely in Bengali (বাংলা) with a sharp, professional tone.
-- Output valid HTML using <strong> and <span style="color:var(--buy)"> for bullish/support or <span style="color:var(--sell)"> for bearish/resistance. No markdown backticks.
-- Keep it concise (3-4 sentences max).
+1. DO NOT act like a textbook.
+2. Focus heavily on Fake vs Real Walls and CVD to detect if Whales are Spoofing to set a TRAP for retail traders.
+3. DIVERGENCE RULES: If Price is at resistance but CVD is highly negative, it's a FAKE PUMP (Trap). If Price is at support but CVD is positive, it's a FAKE DUMP (Trap).
+4. MULTI-TIMEFRAME ANALYSIS (MTFA): Compare the 15m (micro) spoofing vs 1h/4h (macro) spoofing to detect larger institutional trends.
+5. Provide a "Trap Probability Score" (e.g. Trap Probability: 85%) based on the ratio of Fake walls and CVD divergence.
+6. Reply entirely in Bengali (বাংলা) with a sharp, professional tone.
+7. Output valid HTML using <strong> and <span style="color:var(--buy)"> for bullish/support or <span style="color:var(--sell)"> for bearish/resistance. No markdown backticks.
+8. Keep it concise (4-5 sentences max).
 
 LIVE MARKET DATA:
-Timeframe: ${tf} | Current Price: $${currentPrice}
-SMC Signal: ${signal ? signal.type + ' (' + signal.reason + ')' : 'Neutral'}
+Timeframe Focus: ${tf} | Current Price: $${currentPrice}
 Immediate Resistance: $${resistance} | Immediate Support: $${support}
 Institutional Liquidity Pools: ${liqPools}
-Buy Walls: $${(stats.totalBids/1000000).toFixed(1)}M (Real: ${(stats.realBids/1000000).toFixed(1)}M, Fake: ${(stats.fakeBids/1000000).toFixed(1)}M)
-Sell Walls: $${(stats.totalAsks/1000000).toFixed(1)}M (Real: ${(stats.realAsks/1000000).toFixed(1)}M, Fake: ${(stats.fakeAsks/1000000).toFixed(1)}M)
 CVD (Net Orders): ${cvdData ? (cvdData.netCvd > 0 ? '+'+cvdData.netCvd.toFixed(2)+' BTC Bought' : cvdData.netCvd.toFixed(2)+' BTC Sold') : 'N/A'}
 
-Based on this data, identify if there is a trap, where the price is likely heading (to which liquidity pool/support/resistance), and give a clear directional bias.`;
+MULTI-TIMEFRAME SPOOFING DATA:
+${formatSpoofStats(stats)}
+
+Based on this raw data, identify if there is a spoofing trap, calculate the Trap Probability Score, and give a clear directional bias.`;
 
         const models = [
             'gemini-2.5-flash',
@@ -818,23 +833,38 @@ app.post('/api/jarvis-chat', async (req, res) => {
         const resistance = swingHighs && swingHighs.length > 0 ? swingHighs[swingHighs.length-1].price.toFixed(2) : 'N/A';
         const liqPools = instZones && instZones.length > 0 ? instZones.map(z => `$${z.price.toFixed(2)} (${z.type})`).join(', ') : 'None detected';
         
+        const formatSpoofStats = (statsObj) => {
+            if(!statsObj) return 'No spoofing data';
+            let out = '';
+            ['15m', '1h', '4h'].forEach(t => {
+                if(statsObj[t]) {
+                    const s = statsObj[t];
+                    out += `[${t}] Buy Walls: $${(s.totalBids/1e6).toFixed(1)}M (Real: ${(s.realBids/1e6).toFixed(1)}M, Fake: ${(s.fakeBids/1e6).toFixed(1)}M) | Sell Walls: $${(s.totalAsks/1e6).toFixed(1)}M (Real: ${(s.realAsks/1e6).toFixed(1)}M, Fake: ${(s.fakeAsks/1e6).toFixed(1)}M)\n`;
+                }
+            });
+            return out;
+        };
+        
         const systemPrompt = `You are JARVIS, an elite algorithmic crypto order flow analyst.
 CRITICAL RULES:
-1. DO NOT act like a textbook or wiki. Never define basic trading concepts (like what a flag pattern is, what volume means, etc.).
-2. You have ALL the necessary data. Use the Live Market Data provided below to answer the user's questions directly and sharply.
-3. Reply entirely in Bengali (বাংলা).
-4. Output valid HTML (e.g. <strong>, <span style="color:var(--buy)">). No markdown backticks.
+1. DO NOT act like a textbook.
+2. Focus intensely on Fake vs Real Walls and CVD to detect if Whales are Spoofing to trap retail traders. This is your primary job.
+3. DIVERGENCE RULES: If Price goes UP to resistance but CVD is NEGATIVE, it's a FAKE PUMP (Trap). If Price goes DOWN to support but CVD is POSITIVE, it's a FAKE DUMP (Trap).
+4. MULTI-TIMEFRAME ANALYSIS: Compare the 15m (micro) spoofing vs 1h/4h (macro) spoofing to detect larger trends.
+5. Provide a "Trap Probability Score" (e.g. Trap Probability: 85%).
+6. Reply entirely in Bengali (বাংলা).
+7. Output valid HTML (e.g. <strong>, <span style="color:var(--buy)">). No markdown backticks.
 
 LIVE MARKET DATA:
-Timeframe: ${tf} | Price: $${currentPrice}
-SMC Signal: ${signal ? signal.type + ' (' + signal.reason + ')' : 'Neutral'}
+Timeframe Focus: ${tf} | Price: $${currentPrice}
 Support: $${support} | Resistance: $${resistance}
 Liquidity Pools: ${liqPools}
-Buy Walls: $${(stats.totalBids/1000000).toFixed(1)}M (Real: ${(stats.realBids/1000000).toFixed(1)}M, Fake: ${(stats.fakeBids/1000000).toFixed(1)}M)
-Sell Walls: $${(stats.totalAsks/1000000).toFixed(1)}M (Real: ${(stats.realAsks/1000000).toFixed(1)}M, Fake: ${(stats.fakeAsks/1000000).toFixed(1)}M)
 CVD (Net Orders): ${cvdData ? (cvdData.netCvd > 0 ? '+'+cvdData.netCvd.toFixed(2)+' BTC Bought' : cvdData.netCvd.toFixed(2)+' BTC Sold') : 'N/A'}
 
-Based on this live context, answer the user's prompt as a pro trader.`;
+MULTI-TIMEFRAME SPOOFING DATA:
+${formatSpoofStats(stats)}
+
+Based on this raw live context, answer the user's prompt as a pro order flow trader.`;
 
         const models = [
             'gemini-2.5-flash',
