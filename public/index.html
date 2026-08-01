@@ -2274,9 +2274,8 @@ function buildDivMarkers(candles, rsi, cci, cmf, obv) {
     // BULLISH DIVERGENCE (at pivot lows)
     for(let p=1; p<pivLows.length; p++) {
         const curr = pivLows[p], prev = pivLows[p-1];
-        const isDownTrend = msbTrend[curr] === -1;
         
-        if (isDownTrend) continue; // Only plot if NOT in downtrend
+        // Removed trend filter requirement
 
         const priceDn = candles[curr].close < candles[prev].close;
         const priceUp = candles[curr].close > candles[prev].close;
@@ -2299,9 +2298,8 @@ function buildDivMarkers(candles, rsi, cci, cmf, obv) {
     // BEARISH DIVERGENCE (at pivot highs)
     for(let p=1; p<pivHighs.length; p++) {
         const curr = pivHighs[p], prev = pivHighs[p-1];
-        const isUpTrend = msbTrend[curr] === 1;
         
-        if (isUpTrend) continue; // Only plot if NOT in uptrend
+        // Removed trend filter requirement
 
         const priceUp = candles[curr].close > candles[prev].close;
         const priceDn = candles[curr].close < candles[prev].close;
