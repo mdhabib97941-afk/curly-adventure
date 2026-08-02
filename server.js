@@ -1,10 +1,4 @@
-
-        // Update macroData object for generateInternalJarvisAnalysis
-        liveOrderFlow.macroData = {
-            trend1D: trend1D,
-            trend4H: trend4H,
-            macroCVD: liveOrderFlow.macroCvdNet || 0
-        };import express from 'express';
+import express from 'express';
 import cors from 'cors';
 import axios from 'axios';
 import sqlite3 from 'sqlite3';
@@ -1184,6 +1178,7 @@ async function fetchMacroData(symbol) {
             const h4TotalVol = parseFloat(d4[5]);
             const h4TakerBuy = parseFloat(d4[9]);
             liveOrderFlow.macroTrend4h = analyzeInstitutionalOrderFlow(h4Open, h4Close, h4TakerBuy, h4TotalVol);
+            liveOrderFlow.macroData = { trend1D: liveOrderFlow.dailyTrend, trend4H: liveOrderFlow.macroTrend4h, macroCVD: liveOrderFlow.macroCvdNet || 0 };
         }
     } catch(err) {
         console.error("Macro data fetch error:", err.message);
