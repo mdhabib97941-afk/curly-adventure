@@ -1448,3 +1448,115 @@ async function fetchOpenInterest() {
         }
         liveOrderFlow.openInterest = oi;
     
+} catch (err) {
+        // console.error("OI error");
+    }
+}
+setInterval(fetchOpenInterest, 30000);
+fetchOpenInterest();
+
+async function fetchHedgeFundData(symbol) {
+    try {
+        let fr = 0;
+        let ls = 0;
+
+        const frRes = await axios.get(`https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${symbol}`, {timeout:5000});
+        if (frRes.data) {
+            fr = parseFloat(frRes.data.lastFundingRate);
+            liveOrderFlow.fundingRate = fr;
+        }
+
+        const lsRes = await axios.get(`https://fapi.binance.com/futures/data/globalLongShortAccountRatio?symbol=${symbol}&period=5m`, {timeout:5000});
+        if (lsRes.data && lsRes.data.length > 0) {
+            ls = parseFloat(lsRes.data[0].longShortRatio);
+            liveOrderFlow.longShortRatio = ls;
+        }
+
+        // Save current 5m snapshot to MongoDB
+        const snapshot = new HedgeFundData({
+            fundingRate: fr,
+            longShortRatio: ls,
+            liquidationsLongCount: liveOrderFlow.recentLiquidations.long,
+            liquidationsShortCount: liveOrderFlow.recentLiquidations.short,
+            liquidationsLongVol: liveOrderFlow.recentLiquidations.longVol,
+            liquidationsShortVol: liveOrderFlow.recentLiquidations.shortVol
+        });
+        await snapshot.save();
+
+        // Analyze last 24 Hours from MongoDB
+        const time24hAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        const data24h = await HedgeFundData.find({ timestamp: { $gte: time24hAgo } }).sort({timestamp: 1});
+        
+        let totalLongRekt = 0;
+        let totalShortRekt = 0;
+        
+        if (data24h && data24h.length > 0) {
+            data24h.forEach(doc => {
+                totalLongRekt += doc.liquidationsLongVol || 0;
+                totalShortRekt += doc.liquidationsShortVol || 0;
+            });
+            
+            liveOrderFlow.history24H.totalLongRektVol = totalLongRekt;
+            liveOrderFlow.history24H.totalShortRektVol = totalShortRekt;
+            
+            const firstFr = data24h[0].fundingRate || 0;
+            const lastFr = fr;
+            if (lastFr > firstFr + 0.00005) liveOrderFlow.history24H.fundingTrend = 'Increasing';
+            else if (lastFr < firstFr - 0.00005) liveOrderFlow.history24H.fundingTrend = 'Decreasing';
+            else liveOrderFlow.history24H.fundingTrend = 'Neutral';
+        }
+        
+        // Reset 5m counters after saving
+        liveOrderFlow.recentLiquidations = { long: 0, short: 0, longVol: 0, shortVol: 0 };
+        
+    } catch(err) {
+        console.error("Hedge Fund data fetch/db error:", err.message);
+    }
+}
+// Run every 5 mins
+setInterval(() => fetchHedgeFundData('BTCUSDT'), 5 * 60 * 1000);
+fetchHedgeFundData('BTCUSDT');
+\napp.post('/api/jarvis-chat', async (req, res) => {
+    try {
+        const { history } = req.body;
+        const apiKey = process.env.GEMINI_API_KEY;
+        if (!apiKey) return res.status(400).json({ error: "GEMINI_API_KEY environment variable is not set." });
+        
+        const internalHtml = generateInternalJarvisAnalysis(req.body);
+        const prompt = "Reply to the user in Bengali.";
+        
+        let resultHtml = null;
+        for (const model of ['gemini-2.5-flash', 'gemini-2.0-flash']) {
+            try {
+                const response = await axios.post(
+                    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+                    { contents: [{ parts: [{ text: prompt }] }] },
+                    { timeout: 5000 }
+                );
+                if (response.data && response.data.candidates) {
+                    resultHtml = response.data.candidates[0].content.parts[0].text;
+                    break;
+                }
+            } catch (err) {}
+        }
+
+        if (resultHtml) {
+            resultHtml = resultHtml.replace(/\`\`\`html/gi, '').replace(/\`\`\`/g, '').trim();
+            res.json({ success: true, text: resultHtml });
+        } else {
+            console.log("Falling back to Internal JARVIS Chat Engine...");
+            const lastMsg = history && history.length > 0 ? history[history.length - 1].parts[0].text : '';
+            const chatHtml = `<strong>[Internal AI]</strong> যেহেতু আমি লাইভ মার্কেট ডাটা পড়ছি ("${lastMsg}") এবং আপনার দেওয়া API কী কাজ করছে না, আমি শুধু বর্তমান মার্কেটের অবস্থা বলতে পারবো। রিয়ে-টাইম ডাটা অনুযায়ী নিচের পয়েন্টগুলো দেখুন:<br><br>${internalHtml}`;
+            res.json({ success: true, text: chatHtml, internal: true });
+        }
+        
+    } catch(err) {
+        console.error("JARVIS Chat Error:", err);
+        const internalHtml = generateInternalJarvisAnalysis(req.body);
+        const chatHtml = `<strong>[Internal AI]</strong> API Error! তবে আমি লাইভ ডাটা থেকে বর্তমান মার্কেট অনুযায়ী নিচের অ্যানালাইসিসটি তৈরি করেছি:<br><br>${internalHtml}`;
+        res.json({ success: true, text: chatHtml, internal: true });
+    }
+});
+
+
+app.listen(PORT, () => console.log(`[SERVER] Alpha-Flow SMC Brain v4 running on port ${PORT}`));
