@@ -1600,7 +1600,7 @@ function generateInternalJarvisAnalysis(data) {
 
     if (wsAsk) html += '&#127786;&#65039; <span style="color:var(--sell)">Liquidity Magnet (Resistance): উপরে $' + wsAsk.price.toFixed(2) + ' এ বিশাল সেলারদের দেওয়াল (' + wsAsk.qty.toFixed(2) + ' BTC) আছে।</span><br>';
     if (wsBid) html += '&#127786;&#65039; <span style="color:var(--buy)">Liquidity Magnet (Support): নিচে $' + wsBid.price.toFixed(2) + ' এ বিশাল বায়ারদের দেওয়াল (' + wsBid.qty.toFixed(2) + ' BTC) আছে।</span><br>';
-    if (wsSpoof) html += '&#128680; <span style="color:var(--sell)">Live Alert: ' + wsSpoof + ' (Spoofing Detected)</span><br>';
+    if (wsSpoof) html += '&#128680; <span style="color:var(--sell)">Live Alert: ' + wsSpoof + '</span><br>';
 
     if (cvdNet > 10) html += 'CVD: <span style="color:var(--buy)">+' + cvdNet.toFixed(2) + ' BTC bought &mdash; স্পট মার্কেটে প্রচুর অ্যাগ্রেসিভ বাইং হচ্ছে।</span><br>';
     else if (cvdNet < -10) html += 'CVD: <span style="color:var(--sell)">' + cvdNet.toFixed(2) + ' BTC sold &mdash; স্পট মার্কেটে প্রচুর অ্যাগ্রেসিভ সেলিং হচ্ছে।</span><br>';
@@ -1651,6 +1651,7 @@ function generateInternalJarvisAnalysis(data) {
         }
         
         // --- Multi-Timeframe Order Authenticity (Real vs Spoofed) ---
+        let spoofIntent = 'Neutral'; // Track global intent for Verdict
         let authObj = liveOrderFlow.orderAuthenticity;
         if (authObj && authObj['24h'] && (authObj['24h'].totalBids > 0 || authObj['24h'].totalAsks > 0)) {
             html += '<br>&nbsp;&nbsp;&#128680; <strong>Order Authenticity (Real vs Spoofed - Multi-Timeframe):</strong><br>';
@@ -1686,8 +1687,10 @@ function generateInternalJarvisAnalysis(data) {
             let sellFakeShort = Math.max(t5.sell, t15.sell, t1.sell);
             
             if ((sellFake24 > buyFake24 * 1.5 && sellFake24 > 5) || (sellFakeShort > buyFakeShort * 1.5 && sellFakeShort > 5)) {
+                spoofIntent = 'Accumulation';
                 html += '&nbsp;&nbsp;&nbsp;&nbsp;&mdash; <span style="color:var(--buy)"><strong>Intent Analysis:</strong> ওয়েলসরা বারবার উপরে ফেক সেলিং দেওয়াল তৈরি করে মার্কেটকে ভয় দেখাচ্ছে (Accumulation by Spoofing)। নিচের দিকে ডাম্পিং ফেক হতে পারে।</span><br>';
             } else if ((buyFake24 > sellFake24 * 1.5 && buyFake24 > 5) || (buyFakeShort > sellFakeShort * 1.5 && buyFakeShort > 5)) {
+                spoofIntent = 'Distribution';
                 html += '&nbsp;&nbsp;&nbsp;&nbsp;&mdash; <span style="color:var(--sell)"><strong>Intent Analysis:</strong> ওয়েলসরা বারবার নিচে ফেক বায়িং দেওয়াল দিয়ে মার্কেটকে উপরে পাম্প করাচ্ছে (Distribution by Spoofing)। উপরের দিকের ব্রেকআউট ফেক হতে পারে।</span><br>';
             } else {
                 html += '&nbsp;&nbsp;&nbsp;&nbsp;&mdash; <span style="color:#f59e0b"><strong>Intent Analysis:</strong> মার্কেটে স্পুফিং ব্যালেন্সড। বড় কোনো Manipulation দেখা যাচ্ছে না।</span><br>';
