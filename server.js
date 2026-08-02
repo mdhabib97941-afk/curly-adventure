@@ -25,7 +25,6 @@ app.post('/api/set-symbol', (req, res) => {
     res.json({success: true, symbol: SYMBOL});
 });
 
-
 // --- PROXY ENDPOINT FOR CHART ---
 app.get('/api/proxy/klines', async (req, res) => {
     try {
@@ -75,7 +74,6 @@ const hedgeFundSchema = new mongoose.Schema({
 });
 const HedgeFundData = mongoose.model('HedgeFundData', hedgeFundSchema);
 console.log("[DB] HedgeFundData schema ready (84h TTL).");
-
 
 const BtcDeepLiquiditySchema = new mongoose.Schema({
     timestamp: { type: Date, default: Date.now, index: { expireAfterSeconds: 172800 } }, // 48h TTL
@@ -1198,12 +1196,10 @@ setInterval(() => fetchMacroData('BTCUSDT'), 5 * 60 * 1000);
 setTimeout(() => fetchMacroData('BTCUSDT'), 2000);
 
 
-
 let lastWhaleWallBid = null;
 let lastWhaleWallAsk = null;
 
 let lastTradeId = 0;
-
 
 const WS_BASE = 'wss://stream.binance.com:9443/ws';
 let wsDepth = null;
@@ -1313,7 +1309,6 @@ connectTradeStream(SYMBOL);
 
 
 
-
 // Endpoint for Strategy Lab UI
 app.get('/api/orderflow', (req, res) => {
     res.json(liveOrderFlow);
@@ -1337,7 +1332,6 @@ setInterval(async () => {
         console.error("Cleanup error:", err);
     }
 }, 60000);
-
 
 // --- Open Interest (OI) & Killzone Logic ---
 function getKillzone() {
@@ -1534,7 +1528,6 @@ setTimeout(updateAuthenticityStats, 5000);
 
 fetchHedgeFundData('BTCUSDT');
 
-
 // --- Internal JARVIS AI Engine ---
 function generateInternalJarvisAnalysis(data) {
     const curPrice = liveOrderFlow.currentPrice || 0;
@@ -1629,20 +1622,6 @@ function generateInternalJarvisAnalysis(data) {
     if (ls > 0) {
         html += '<br><hr style="border-color:#333; margin:15px 0;">';
     
-    // --- Volume Profile Context ---
-    
-    if (liveOrderFlow.vpPOC && curPrice) {
-        const dist = Math.abs(curPrice - liveOrderFlow.vpPOC) / curPrice * 100;
-        if (dist > 0.1) {
-            if (curPrice < liveOrderFlow.vpPOC) {
-                html += `&#9888; <strong>Overhead Resistance (nPOC):</strong> Price is below $${liveOrderFlow.vpPOC.toLocaleString(undefined,{maximumFractionDigits:0})} (POC). This is a strong resistance! Avoid Blind Longs and look for short setups.<br><br>`;
-            } else {
-                html += `&#128302; <strong>Floor Support (nPOC):</strong> Price is above $${liveOrderFlow.vpPOC.toLocaleString(undefined,{maximumFractionDigits:0})} (POC). This is a strong support floor! Look for long setups.<br><br>`;
-            }
-        } else {
-            html += `&#127919; <strong>POC Zone:</strong> Price is exactly inside the Fair Value $${liveOrderFlow.vpPOC.toLocaleString(undefined,{maximumFractionDigits:0})} (POC)! Wait for a clear breakout or breakdown.<br><br>`;
-        }
-    }
 
         html += '<strong>&#127976; Hedge Fund Desk (Leverage & Liquidations):</strong><br>';
 
@@ -1723,20 +1702,6 @@ function generateInternalJarvisAnalysis(data) {
     if (topZones.length > 0) {
         html += '<br><hr style="border-color:#333; margin:15px 0;">';
     
-    // --- Volume Profile Context ---
-    
-    if (liveOrderFlow.vpPOC && curPrice) {
-        const dist = Math.abs(curPrice - liveOrderFlow.vpPOC) / curPrice * 100;
-        if (dist > 0.1) {
-            if (curPrice < liveOrderFlow.vpPOC) {
-                html += `&#9888; <strong>Overhead Resistance (nPOC):</strong> Price is below $${liveOrderFlow.vpPOC.toLocaleString(undefined,{maximumFractionDigits:0})} (POC). This is a strong resistance! Avoid Blind Longs and look for short setups.<br><br>`;
-            } else {
-                html += `&#128302; <strong>Floor Support (nPOC):</strong> Price is above $${liveOrderFlow.vpPOC.toLocaleString(undefined,{maximumFractionDigits:0})} (POC). This is a strong support floor! Look for long setups.<br><br>`;
-            }
-        } else {
-            html += `&#127919; <strong>POC Zone:</strong> Price is exactly inside the Fair Value $${liveOrderFlow.vpPOC.toLocaleString(undefined,{maximumFractionDigits:0})} (POC)! Wait for a clear breakout or breakdown.<br><br>`;
-        }
-    }
 
         html += '<strong>&#127919; Institutional Liquidity Hunt Map (24H):</strong><br>';
         html += '<small style="color:#888;">ওয়েলসরা যে প্রাইস জোনগুলোতে সবচেয়ে বেশি লিকুইডেশন করেছে:</small><br><br>';
@@ -1754,21 +1719,6 @@ function generateInternalJarvisAnalysis(data) {
 
     // ===== 4. VERDICT =====
     html += '<br><hr style="border-color:#333; margin:15px 0;">';
-    
-    // --- Volume Profile Context ---
-    
-    if (liveOrderFlow.vpPOC && curPrice) {
-        const dist = Math.abs(curPrice - liveOrderFlow.vpPOC) / curPrice * 100;
-        if (dist > 0.1) {
-            if (curPrice < liveOrderFlow.vpPOC) {
-                html += `&#9888; <strong>Overhead Resistance (nPOC):</strong> Price is below $${liveOrderFlow.vpPOC.toLocaleString(undefined,{maximumFractionDigits:0})} (POC). This is a strong resistance! Avoid Blind Longs and look for short setups.<br><br>`;
-            } else {
-                html += `&#128302; <strong>Floor Support (nPOC):</strong> Price is above $${liveOrderFlow.vpPOC.toLocaleString(undefined,{maximumFractionDigits:0})} (POC). This is a strong support floor! Look for long setups.<br><br>`;
-            }
-        } else {
-            html += `&#127919; <strong>POC Zone:</strong> Price is exactly inside the Fair Value $${liveOrderFlow.vpPOC.toLocaleString(undefined,{maximumFractionDigits:0})} (POC)! Wait for a clear breakout or breakdown.<br><br>`;
-        }
-    }
 
     let verdictStr = '';
     if (trapType === 'Bear Trap' || (is1DBull && cvdNet > 10)) {
@@ -1826,7 +1776,6 @@ app.post('/api/jarvis-chat', async (req, res) => {
     }
 });
 
-
 // Liquidation Heatmap API
 app.get('/api/liq-heatmap', (req, res) => {
     const currentPrice = liveOrderFlow.currentPrice || 0;
@@ -1852,43 +1801,45 @@ app.get('/api/liq-heatmap', (req, res) => {
     });
 });
 
-
 // --- Volume Profile (POC) Backend Engine ---
 async function updateVolumeProfile() {
     try {
-        const res = await axios.get('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1h&limit=300');
-        const klines = res.data;
-        if (!klines || !klines.length) return;
+        // Macro POC (300 hours)
+        const resMacro = await axios.get('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1h&limit=300');
+        const klinesMacro = resMacro.data;
+        if (klinesMacro && klinesMacro.length) {
+            const prices = klinesMacro.map(k => (parseFloat(k[2]) + parseFloat(k[3])) / 2);
+            const minP = Math.min(...prices);
+            const maxP = Math.max(...prices);
+            const bucketSize = (maxP - minP) / 12;
+            const buckets = Array.from({length: 12}, (_,i) => ({ priceLow: minP + i * bucketSize, priceHigh: minP + (i+1) * bucketSize, vol: 0 }));
+            klinesMacro.forEach(k => {
+                const mid = (parseFloat(k[2]) + parseFloat(k[3])) / 2;
+                const idx = Math.min(Math.floor((mid - minP) / bucketSize), 11);
+                buckets[idx].vol += parseFloat(k[5]);
+            });
+            let maxV = 0, pocBucket = null;
+            buckets.forEach(b => { if(b.vol > maxV) { maxV = b.vol; pocBucket = b; } });
+            if (pocBucket) liveOrderFlow.vpPOC_macro = (pocBucket.priceLow + pocBucket.priceHigh) / 2;
+        }
 
-        const prices = klines.map(k => (parseFloat(k[2]) + parseFloat(k[3])) / 2); // mid price
-        const vols   = klines.map(k => parseFloat(k[5]));
-        const minP = Math.min(...prices);
-        const maxP = Math.max(...prices);
-        const BUCKETS = 12;
-        const bucketSize = (maxP - minP) / BUCKETS;
-
-        const buckets = Array.from({length: BUCKETS}, (_,i) => ({
-            priceLow:  minP + i * bucketSize,
-            priceHigh: minP + (i+1) * bucketSize,
-            vol: 0
-        }));
-
-        klines.forEach(k => {
-            const mid = (parseFloat(k[2]) + parseFloat(k[3])) / 2;
-            const vol = parseFloat(k[5]);
-            const idx = Math.min(Math.floor((mid - minP) / bucketSize), BUCKETS - 1);
-            buckets[idx].vol += vol;
-        });
-
-        // Find POC
-        let maxV = 0;
-        let pocBucket = null;
-        buckets.forEach(b => {
-            if(b.vol > maxV) { maxV = b.vol; pocBucket = b; }
-        });
-
-        if (pocBucket) {
-            liveOrderFlow.vpPOC = (pocBucket.priceLow + pocBucket.priceHigh) / 2;
+        // Micro POC (24 hours -> 96 * 15m)
+        const resMicro = await axios.get('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=15m&limit=96');
+        const klinesMicro = resMicro.data;
+        if (klinesMicro && klinesMicro.length) {
+            const prices = klinesMicro.map(k => (parseFloat(k[2]) + parseFloat(k[3])) / 2);
+            const minP = Math.min(...prices);
+            const maxP = Math.max(...prices);
+            const bucketSize = (maxP - minP) / 12;
+            const buckets = Array.from({length: 12}, (_,i) => ({ priceLow: minP + i * bucketSize, priceHigh: minP + (i+1) * bucketSize, vol: 0 }));
+            klinesMicro.forEach(k => {
+                const mid = (parseFloat(k[2]) + parseFloat(k[3])) / 2;
+                const idx = Math.min(Math.floor((mid - minP) / bucketSize), 11);
+                buckets[idx].vol += parseFloat(k[5]);
+            });
+            let maxV = 0, pocBucket = null;
+            buckets.forEach(b => { if(b.vol > maxV) { maxV = b.vol; pocBucket = b; } });
+            if (pocBucket) liveOrderFlow.vpPOC_micro = (pocBucket.priceLow + pocBucket.priceHigh) / 2;
         }
     } catch (e) {
         console.log("Error updating VP:", e.message);
