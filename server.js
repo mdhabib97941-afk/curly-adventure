@@ -1537,6 +1537,7 @@ fetchHedgeFundData('BTCUSDT');
 
 // --- Internal JARVIS AI Engine ---
 function generateInternalJarvisAnalysis(data) {
+    const curPrice = liveOrderFlow.currentPrice || 0;
     const price    = liveOrderFlow.currentPrice || data.currentPrice;
     const cvdNet   = liveOrderFlow.cvd || (data.cvdData ? data.cvdData.netCvd : 0);
     const wsBid    = liveOrderFlow.whaleWallBid;
@@ -1629,7 +1630,7 @@ function generateInternalJarvisAnalysis(data) {
         html += '<br><hr style="border-color:#333; margin:15px 0;">';
     
     // --- Volume Profile Context ---
-    const curPrice = liveOrderFlow.currentPrice;
+    
     if (liveOrderFlow.vpPOC && curPrice) {
         const dist = Math.abs(curPrice - liveOrderFlow.vpPOC) / curPrice * 100;
         if (dist > 0.1) {
@@ -1718,12 +1719,12 @@ function generateInternalJarvisAnalysis(data) {
 
     // ===== 3.5 INSTITUTIONAL HUNT ZONES =====
     const topZones = liveOrderFlow.history24H.topLiqZones || [];
-    const curPrice = liveOrderFlow.currentPrice || 0;
+    
     if (topZones.length > 0) {
         html += '<br><hr style="border-color:#333; margin:15px 0;">';
     
     // --- Volume Profile Context ---
-    const curPrice = liveOrderFlow.currentPrice;
+    
     if (liveOrderFlow.vpPOC && curPrice) {
         const dist = Math.abs(curPrice - liveOrderFlow.vpPOC) / curPrice * 100;
         if (dist > 0.1) {
@@ -1755,7 +1756,7 @@ function generateInternalJarvisAnalysis(data) {
     html += '<br><hr style="border-color:#333; margin:15px 0;">';
     
     // --- Volume Profile Context ---
-    const curPrice = liveOrderFlow.currentPrice;
+    
     if (liveOrderFlow.vpPOC && curPrice) {
         const dist = Math.abs(curPrice - liveOrderFlow.vpPOC) / curPrice * 100;
         if (dist > 0.1) {
