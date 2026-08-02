@@ -1455,67 +1455,7 @@ async function fetchOpenInterest() {
 setInterval(fetchOpenInterest, 30000);
 fetchOpenInterest();
 
-async function fetchHedgeFundData(symbol) {
-    try {
-        let fr = 0;
-        let ls = 0;
 
-        const frRes = await axios.get(`https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${symbol}`, {timeout:5000});
-        if (frRes.data) {
-            fr = parseFloat(frRes.data.lastFundingRate);
-            liveOrderFlow.fundingRate = fr;
-        }
-
-        const lsRes = await axios.get(`https://fapi.binance.com/futures/data/globalLongShortAccountRatio?symbol=${symbol}&period=5m`, {timeout:5000});
-        if (lsRes.data && lsRes.data.length > 0) {
-            ls = parseFloat(lsRes.data[0].longShortRatio);
-            liveOrderFlow.longShortRatio = ls;
-        }
-
-        // Save current 5m snapshot to MongoDB
-        const snapshot = new HedgeFundData({
-            fundingRate: fr,
-            longShortRatio: ls,
-            liquidationsLongCount: liveOrderFlow.recentLiquidations.long,
-            liquidationsShortCount: liveOrderFlow.recentLiquidations.short,
-            liquidationsLongVol: liveOrderFlow.recentLiquidations.longVol,
-            liquidationsShortVol: liveOrderFlow.recentLiquidations.shortVol
-        });
-        await snapshot.save();
-
-        // Analyze last 24 Hours from MongoDB
-        const time24hAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-        const data24h = await HedgeFundData.find({ timestamp: { $gte: time24hAgo } }).sort({timestamp: 1});
-        
-        let totalLongRekt = 0;
-        let totalShortRekt = 0;
-        
-        if (data24h && data24h.length > 0) {
-            data24h.forEach(doc => {
-                totalLongRekt += doc.liquidationsLongVol || 0;
-                totalShortRekt += doc.liquidationsShortVol || 0;
-            });
-            
-            liveOrderFlow.history24H.totalLongRektVol = totalLongRekt;
-            liveOrderFlow.history24H.totalShortRektVol = totalShortRekt;
-            
-            const firstFr = data24h[0].fundingRate || 0;
-            const lastFr = fr;
-            if (lastFr > firstFr + 0.00005) liveOrderFlow.history24H.fundingTrend = 'Increasing';
-            else if (lastFr < firstFr - 0.00005) liveOrderFlow.history24H.fundingTrend = 'Decreasing';
-            else liveOrderFlow.history24H.fundingTrend = 'Neutral';
-        }
-        
-        // Reset 5m counters after saving
-        liveOrderFlow.recentLiquidations = { long: 0, short: 0, longVol: 0, shortVol: 0 };
-        
-    } catch(err) {
-        console.error("Hedge Fund data fetch/db error:", err.message);
-    }
-}
-// Run every 5 mins
-setInterval(() => fetchHedgeFundData('BTCUSDT'), 5 * 60 * 1000);
-fetchHedgeFundData('BTCUSDT');
 \napp.post('/api/jarvis-chat', async (req, res) => {
     try {
         const { history } = req.body;
