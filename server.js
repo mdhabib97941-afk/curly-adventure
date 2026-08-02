@@ -1496,21 +1496,31 @@ async function updateAuthenticityStats() {
     try {
         const last1440 = await BtcDeepLiquidity.find().sort({ _id: -1 }).limit(1440).lean();
         if (last1440 && last1440.length > 0) {
-            let sumBids = 0, sumAsks = 0, maxBids = 0, maxAsks = 0;
-            last1440.forEach(r => {
-                const bids = (r.bid_vol_1||0) + (r.bid_vol_2||0) + (r.bid_vol_5||0);
-                const asks = (r.ask_vol_1||0) + (r.ask_vol_2||0) + (r.ask_vol_5||0);
-                sumBids += bids;
-                sumAsks += asks;
-                if(bids > maxBids) maxBids = bids;
-                if(asks > maxAsks) maxAsks = asks;
-            });
-            const avgBids = sumBids / last1440.length;
-            const avgAsks = sumAsks / last1440.length;
+            const calculateSpoof = (rows) => {
+                if(rows.length === 0) return null;
+                let sumBids = 0, sumAsks = 0, maxBids = 0, maxAsks = 0;
+                rows.forEach(r => {
+                    const bids = (r.bid_vol_1||0) + (r.bid_vol_2||0) + (r.bid_vol_5||0);
+                    const asks = (r.ask_vol_1||0) + (r.ask_vol_2||0) + (r.ask_vol_5||0);
+                    sumBids += bids;
+                    sumAsks += asks;
+                    if(bids > maxBids) maxBids = bids;
+                    if(asks > maxAsks) maxAsks = asks;
+                });
+                const avgBids = sumBids / rows.length;
+                const avgAsks = sumAsks / rows.length;
+                return {
+                    totalBids: maxBids, realBids: avgBids, fakeBids: maxBids - avgBids,
+                    totalAsks: maxAsks, realAsks: avgAsks, fakeAsks: maxAsks - avgAsks
+                };
+            };
             
             liveOrderFlow.orderAuthenticity = {
-                totalBids: maxBids, realBids: avgBids, fakeBids: maxBids - avgBids,
-                totalAsks: maxAsks, realAsks: avgAsks, fakeAsks: maxAsks - avgAsks
+                '5m': calculateSpoof(last1440.slice(0, 5)),
+                '15m': calculateSpoof(last1440.slice(0, 15)),
+                '1h': calculateSpoof(last1440.slice(0, 60)),
+                '4h': calculateSpoof(last1440.slice(0, 240)),
+                '24h': calculateSpoof(last1440)
             };
         }
     } catch (e) {
@@ -1640,19 +1650,44 @@ function generateInternalJarvisAnalysis(data) {
             if (liq.short > 0) html += '&nbsp;&nbsp;&nbsp;&nbsp;&#128314; <span style="color:var(--buy)">Shorts Rekt: ' + liq.short + ' positions ($' + (liq.shortVol).toLocaleString(undefined,{maximumFractionDigits:0}) + ')</span><br>';
         }
         
-        // --- 24H Order Authenticity (Real vs Spoofed) ---
-        let auth = liveOrderFlow.orderAuthenticity;
-        if (auth && (auth.totalBids > 0 || auth.totalAsks > 0)) {
-            let buyFakePct = ((auth.fakeBids / auth.totalBids) * 100).toFixed(1);
-            let sellFakePct = ((auth.fakeAsks / auth.totalAsks) * 100).toFixed(1);
+        // --- Multi-Timeframe Order Authenticity (Real vs Spoofed) ---
+        let authObj = liveOrderFlow.orderAuthenticity;
+        if (authObj && authObj['24h'] && (authObj['24h'].totalBids > 0 || authObj['24h'].totalAsks > 0)) {
+            html += '<br>&nbsp;&nbsp;&#128680; <strong>Order Authenticity (Real vs Spoofed - Multi-Timeframe):</strong><br>';
             
-            html += '<br>&nbsp;&nbsp;&#128680; <strong>Order Authenticity (Real vs Spoofed - 24H):</strong><br>';
-            html += '&nbsp;&nbsp;&nbsp;&nbsp;&mdash; <span style="color:var(--buy)">Buy Walls (Bids): <strong>' + buyFakePct + '% Fake (Spoofed)</strong></span> - ($' + (auth.fakeBids/1000000).toFixed(2) + 'M Fake / $' + (auth.totalBids/1000000).toFixed(2) + 'M Total)<br>';
-            html += '&nbsp;&nbsp;&nbsp;&nbsp;&mdash; <span style="color:var(--sell)">Sell Walls (Asks): <strong>' + sellFakePct + '% Fake (Spoofed)</strong></span> - ($' + (auth.fakeAsks/1000000).toFixed(2) + 'M Fake / $' + (auth.totalAsks/1000000).toFixed(2) + 'M Total)<br>';
+            const renderTF = (tfLabel, data) => {
+                if (!data) return '';
+                let buyPct = data.totalBids > 0 ? ((data.fakeBids / data.totalBids) * 100).toFixed(1) : 0;
+                let sellPct = data.totalAsks > 0 ? ((data.fakeAsks / data.totalAsks) * 100).toFixed(1) : 0;
+                let buyColor = parseFloat(buyPct) > 5 ? 'var(--sell)' : '#fff'; // Red if highly spoofed
+                let sellColor = parseFloat(sellPct) > 5 ? 'var(--sell)' : '#fff';
+                return `&nbsp;&nbsp;&nbsp;&nbsp;&mdash; <strong>${tfLabel}</strong>: <span style="color:var(--buy)">Buy (Bids) <strong>${buyPct}% Fake</strong></span> | <span style="color:var(--sell)">Sell (Asks) <strong>${sellPct}% Fake</strong></span><br>`;
+            };
             
-            if (parseFloat(sellFakePct) > parseFloat(buyFakePct) * 1.5 && parseFloat(sellFakePct) > 5) {
+            html += renderTF('Scalp (5m)', authObj['5m']);
+            html += renderTF('Intraday (15m)', authObj['15m']);
+            html += renderTF('Short-term (1H)', authObj['1h']);
+            html += renderTF('Mid-term (4H)', authObj['4h']);
+            html += renderTF('Macro (24H)', authObj['24h']);
+            
+            let buyFake24 = authObj['24h'].totalBids > 0 ? (authObj['24h'].fakeBids / authObj['24h'].totalBids) * 100 : 0;
+            let sellFake24 = authObj['24h'].totalAsks > 0 ? (authObj['24h'].fakeAsks / authObj['24h'].totalAsks) * 100 : 0;
+            
+            // Check short-term spoofing (highest out of 5m, 15m, 1h)
+            const getHighestFake = (tfObj) => {
+                if(!tfObj || tfObj.totalBids === 0 || tfObj.totalAsks === 0) return {buy: 0, sell: 0};
+                return {
+                    buy: (tfObj.fakeBids / tfObj.totalBids) * 100,
+                    sell: (tfObj.fakeAsks / tfObj.totalAsks) * 100
+                };
+            };
+            const t5 = getHighestFake(authObj['5m']), t15 = getHighestFake(authObj['15m']), t1 = getHighestFake(authObj['1h']);
+            let buyFakeShort = Math.max(t5.buy, t15.buy, t1.buy);
+            let sellFakeShort = Math.max(t5.sell, t15.sell, t1.sell);
+            
+            if ((sellFake24 > buyFake24 * 1.5 && sellFake24 > 5) || (sellFakeShort > buyFakeShort * 1.5 && sellFakeShort > 5)) {
                 html += '&nbsp;&nbsp;&nbsp;&nbsp;&mdash; <span style="color:var(--buy)"><strong>Intent Analysis:</strong> ওয়েলসরা বারবার উপরে ফেক সেলিং দেওয়াল তৈরি করে মার্কেটকে ভয় দেখাচ্ছে (Accumulation by Spoofing)। নিচের দিকে ডাম্পিং ফেক হতে পারে।</span><br>';
-            } else if (parseFloat(buyFakePct) > parseFloat(sellFakePct) * 1.5 && parseFloat(buyFakePct) > 5) {
+            } else if ((buyFake24 > sellFake24 * 1.5 && buyFake24 > 5) || (buyFakeShort > sellFakeShort * 1.5 && buyFakeShort > 5)) {
                 html += '&nbsp;&nbsp;&nbsp;&nbsp;&mdash; <span style="color:var(--sell)"><strong>Intent Analysis:</strong> ওয়েলসরা বারবার নিচে ফেক বায়িং দেওয়াল দিয়ে মার্কেটকে উপরে পাম্প করাচ্ছে (Distribution by Spoofing)। উপরের দিকের ব্রেকআউট ফেক হতে পারে।</span><br>';
             } else {
                 html += '&nbsp;&nbsp;&nbsp;&nbsp;&mdash; <span style="color:#f59e0b"><strong>Intent Analysis:</strong> মার্কেটে স্পুফিং ব্যালেন্সড। বড় কোনো Manipulation দেখা যাচ্ছে না।</span><br>';
