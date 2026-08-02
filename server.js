@@ -68,7 +68,8 @@ const hedgeFundSchema = new mongoose.Schema({
     liquidationsLongCount: Number,
     liquidationsShortCount: Number,
     liquidationsLongVol: Number,
-    liquidationsShortVol: Number
+    liquidationsShortVol: Number,
+    liquidationsByPrice: { type: Map, of: Object, default: {} }
 });
 const HedgeFundData = mongoose.model('HedgeFundData', hedgeFundSchema);
 console.log("[DB] HedgeFundData schema ready (48h TTL).");
@@ -1130,7 +1131,9 @@ let liveOrderFlow = {
     recentLiquidations: { long: 0, short: 0, longVol: 0, shortVol: 0 },
     history24H: { totalLongRektVol: 0, totalShortRektVol: 0, fundingTrend: "Neutral" },
     // Macro (readable names for internal analysis)
-    macroData: null
+    macroData: null,
+    // Liquidation Heatmap (price -> {longVol, shortVol})
+    liquidationsByPrice: {}
 };
 
 function analyzeInstitutionalOrderFlow(open, close, takerBuyVol, totalVol) {
@@ -1367,14 +1370,22 @@ liqWs.on('message', (raw) => {
         const qty = parseFloat(o.q) || 0;
         const price = parseFloat(o.p) || 0;
         const vol = qty * price;
+        // Cluster price to nearest $100 zone
+        const priceZone = Math.round(price / 100) * 100;
+        if (!liveOrderFlow.liquidationsByPrice[priceZone]) {
+            liveOrderFlow.liquidationsByPrice[priceZone] = { longVol: 0, shortVol: 0 };
+        }
+
         if (side === 'BUY') {
             // BUY liquidation = Short position liquidated
             liveOrderFlow.recentLiquidations.short += 1;
             liveOrderFlow.recentLiquidations.shortVol += vol;
+            liveOrderFlow.liquidationsByPrice[priceZone].shortVol += vol;
         } else {
             // SELL liquidation = Long position liquidated
             liveOrderFlow.recentLiquidations.long += 1;
             liveOrderFlow.recentLiquidations.longVol += vol;
+            liveOrderFlow.liquidationsByPrice[priceZone].longVol += vol;
         }
     } catch(e) {}
 });
@@ -1409,7 +1420,8 @@ async function fetchHedgeFundData(symbol) {
                 liquidationsLongCount: liveOrderFlow.recentLiquidations.long,
                 liquidationsShortCount: liveOrderFlow.recentLiquidations.short,
                 liquidationsLongVol: liveOrderFlow.recentLiquidations.longVol,
-                liquidationsShortVol: liveOrderFlow.recentLiquidations.shortVol
+                liquidationsShortVol: liveOrderFlow.recentLiquidations.shortVol,
+                liquidationsByPrice: liveOrderFlow.liquidationsByPrice
             });
             await snapshot.save();
 
@@ -1419,12 +1431,29 @@ async function fetchHedgeFundData(symbol) {
 
             if (data24h && data24h.length > 0) {
                 let totalLongRekt = 0, totalShortRekt = 0;
+                // Aggregate liquidation heatmap from all 24h snapshots
+                const priceAgg = {};
                 data24h.forEach(doc => {
                     totalLongRekt += doc.liquidationsLongVol || 0;
                     totalShortRekt += doc.liquidationsShortVol || 0;
+                    if (doc.liquidationsByPrice) {
+                        doc.liquidationsByPrice.forEach((val, key) => {
+                            if (!priceAgg[key]) priceAgg[key] = { longVol: 0, shortVol: 0 };
+                            priceAgg[key].longVol += val.longVol || 0;
+                            priceAgg[key].shortVol += val.shortVol || 0;
+                        });
+                    }
                 });
                 liveOrderFlow.history24H.totalLongRektVol = totalLongRekt;
                 liveOrderFlow.history24H.totalShortRektVol = totalShortRekt;
+
+                // Find top 3 institutional target zones (most liquidation volume)
+                const sortedZones = Object.entries(priceAgg)
+                    .map(([price, data]) => ({ price: parseInt(price), totalVol: (data.longVol + data.shortVol), longVol: data.longVol, shortVol: data.shortVol }))
+                    .filter(z => z.totalVol > 0)
+                    .sort((a, b) => b.totalVol - a.totalVol)
+                    .slice(0, 5);
+                liveOrderFlow.history24H.topLiqZones = sortedZones;
 
                 const firstFr = data24h[0].fundingRate || 0;
                 if (fr > firstFr + 0.00005) liveOrderFlow.history24H.fundingTrend = 'Increasing';
@@ -1435,7 +1464,7 @@ async function fetchHedgeFundData(symbol) {
             console.error('[MongoDB] HedgeFundData save error:', dbErr.message);
         }
 
-        // Reset 5m counters
+        // Reset 5m counters (keep price heatmap for accumulation)
         liveOrderFlow.recentLiquidations = { long: 0, short: 0, longVol: 0, shortVol: 0 };
 
     } catch(err) {
@@ -1554,6 +1583,25 @@ function generateInternalJarvisAnalysis(data) {
         }
     }
 
+    // ===== 3.5 INSTITUTIONAL HUNT ZONES =====
+    const topZones = liveOrderFlow.history24H.topLiqZones || [];
+    const curPrice = liveOrderFlow.currentPrice || 0;
+    if (topZones.length > 0) {
+        html += '<br><hr style="border-color:#333; margin:15px 0;">';
+        html += '<strong>&#127919; Institutional Liquidity Hunt Map (24H):</strong><br>';
+        html += '<small style="color:#888;">ওয়েলসরা যে প্রাইস জোনগুলোতে সবচেয়ে বেশি লিকুইডেশন করেছে:</small><br><br>';
+
+        topZones.forEach((zone, i) => {
+            const direction = zone.price > curPrice ? 'উপরে (Upside Target)' : 'নিচে (Downside Target)';
+            const dirColor = zone.price > curPrice ? 'var(--buy)' : 'var(--sell)';
+            const dominance = zone.longVol > zone.shortVol ? 'Long Hunt' : 'Short Hunt';
+            const domColor = zone.longVol > zone.shortVol ? 'var(--sell)' : 'var(--buy)';
+            html += '#' + (i+1) + ' <strong style="color:' + dirColor + '">$' + zone.price.toLocaleString() + '</strong> ';
+            html += '&mdash; <span style="color:' + domColor + '">' + dominance + '</span> ';
+            html += '($' + (zone.totalVol / 1000000).toFixed(2) + 'M rekt) ' + direction + '<br>';
+        });
+    }
+
     // ===== 4. VERDICT =====
     html += '<br><hr style="border-color:#333; margin:15px 0;">';
     let verdictStr = '';
@@ -1604,5 +1652,30 @@ app.post('/api/jarvis-chat', async (req, res) => {
     }
 });
 
+
+// Liquidation Heatmap API
+app.get('/api/liq-heatmap', (req, res) => {
+    const currentPrice = liveOrderFlow.currentPrice || 0;
+    const zones = liveOrderFlow.history24H.topLiqZones || [];
+    const livePriceMap = liveOrderFlow.liquidationsByPrice || {};
+
+    // Live price clusters (current session)
+    const liveZones = Object.entries(livePriceMap)
+        .map(([price, data]) => ({ price: parseInt(price), longVol: data.longVol || 0, shortVol: data.shortVol || 0, totalVol: (data.longVol || 0) + (data.shortVol || 0) }))
+        .filter(z => z.totalVol > 0)
+        .sort((a, b) => b.totalVol - a.totalVol)
+        .slice(0, 10);
+
+    res.json({
+        currentPrice,
+        topZones24h: zones,
+        liveZones,
+        summary: {
+            totalLongRekt: liveOrderFlow.history24H.totalLongRektVol || 0,
+            totalShortRekt: liveOrderFlow.history24H.totalShortRektVol || 0,
+            fundingTrend: liveOrderFlow.history24H.fundingTrend || 'Neutral'
+        }
+    });
+});
 
 app.listen(PORT, () => console.log(`[SERVER] Alpha-Flow SMC Brain v4 running on port ${PORT}`));
