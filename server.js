@@ -64,7 +64,8 @@ const TF_MS = { '5m': 300000, '15m': 900000, '1h': 3600000, '4h': 14400000, '1d'
 // ─── MONGODB CONNECTION ────────────────────────────────────────────────────────
 const mongoURI = process.env.MONGO_URI || "mongodb+srv://mdhabib97941_db_user:FoQH7HjGaLOIzwNY@cluster0.iiyn4rv.mongodb.net/alphaflow?retryWrites=true&w=majority";
 mongoose.connect(mongoURI, { useNewUrlParser: true, useUnifiedTopology: true })
-
+    .then(() => console.log('[MONGODB] Connected successfully!'))
+    .catch(err => console.error('[MONGODB] Connection error:', err));
 // HedgeFundData Schema (48h TTL auto-delete)
 const hedgeFundSchema = new mongoose.Schema({
     timestamp: { type: Date, default: Date.now, index: { expireAfterSeconds: 172800 } },
@@ -78,8 +79,6 @@ const hedgeFundSchema = new mongoose.Schema({
 const HedgeFundData = mongoose.model('HedgeFundData', hedgeFundSchema);
 console.log("[DB] HedgeFundData schema ready (48h TTL).");
 
-    .then(() => console.log('[MONGODB] Connected successfully!'))
-    .catch(err => console.error('[MONGODB] Connection error:', err));
 
 const BtcDeepLiquiditySchema = new mongoose.Schema({
     timestamp: { type: Date, default: Date.now },
