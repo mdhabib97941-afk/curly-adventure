@@ -1456,7 +1456,8 @@ setInterval(fetchOpenInterest, 30000);
 fetchOpenInterest();
 
 
-\napp.post('/api/jarvis-chat', async (req, res) => {
+
+app.post('/api/jarvis-chat', async (req, res) => {
     try {
         const { history } = req.body;
         const apiKey = process.env.GEMINI_API_KEY;
