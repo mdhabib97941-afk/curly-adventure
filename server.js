@@ -616,7 +616,49 @@ app.get('/api/btc-radar', async(req, res) => {
         // Get Live Price
         let currentPrice = null;
         try {
-            const priceRes = await axios.get(`https://api1.binance.com/api/v3/ticker/price?symbol=BTCUSDT`, { timeout: 3000 });
+            const priceRes = await axios.get(`https://api1.binance.com/api/v3/ticker/price?symbol=BTCUSDT`, { timeout: 3000 })
+        const last1440 = await BtcDeepLiquidity.find().sort({ _id: -1 }).limit(1440).lean();
+        let spoofStats = {
+            '5m': { totalBids: 0, realBids: 0, fakeBids: 0, totalAsks: 0, realAsks: 0, fakeAsks: 0 },
+            '15m': { totalBids: 0, realBids: 0, fakeBids: 0, totalAsks: 0, realAsks: 0, fakeAsks: 0 },
+            '1h': { totalBids: 0, realBids: 0, fakeBids: 0, totalAsks: 0, realAsks: 0, fakeAsks: 0 },
+            '4h': { totalBids: 0, realBids: 0, fakeBids: 0, totalAsks: 0, realAsks: 0, fakeAsks: 0 },
+            '24h': { totalBids: 0, realBids: 0, fakeBids: 0, totalAsks: 0, realAsks: 0, fakeAsks: 0 }
+        };
+        
+        if (last1440 && last1440.length > 0) {
+            const calculateSpoof = (rows) => {
+                if(rows.length === 0) return null;
+                let sumBids = 0, sumAsks = 0, maxBids = 0, maxAsks = 0;
+                rows.forEach(r => {
+                    const bids = r.bid_vol_1 + r.bid_vol_2 + r.bid_vol_5;
+                    const asks = r.ask_vol_1 + r.ask_vol_2 + r.ask_vol_5;
+                    sumBids += bids;
+                    sumAsks += asks;
+                    if(bids > maxBids) maxBids = bids;
+                    if(asks > maxAsks) maxAsks = asks;
+                });
+                const avgBids = sumBids / rows.length;
+                const avgAsks = sumAsks / rows.length;
+                return {
+                    totalBids: maxBids,
+                    realBids: avgBids,
+                    fakeBids: maxBids - avgBids,
+                    totalAsks: maxAsks,
+                    realAsks: avgAsks,
+                    fakeAsks: maxAsks - avgAsks
+                };
+            };
+            
+            spoofStats['5m'] = calculateSpoof(last1440.slice(0, 5)) || spoofStats['5m'];
+            spoofStats['15m'] = calculateSpoof(last1440.slice(0, 15)) || spoofStats['15m'];
+            spoofStats['1h'] = calculateSpoof(last1440.slice(0, 60)) || spoofStats['1h'];
+            spoofStats['4h'] = calculateSpoof(last1440.slice(0, 240)) || spoofStats['4h'];
+            spoofStats['24h'] = calculateSpoof(last1440) || spoofStats['24h'];
+        }
+        
+        // Add spoofStats to the json response
+        ;
             currentPrice = parseFloat(priceRes.data.price);
         } catch (e) {
             console.error("Failed to fetch live BTC price for radar", e.message);
@@ -1064,7 +1106,42 @@ let liveOrderFlow = {
     trapAlert: null, // text alert string
     stopLossZone: null, // text alert string
     spoofAlert: null // text alert string
+,
+    macroCvdNet: 0,
+    dailyTrend: "Neutral",
+    macroTrend4h: "Neutral"
 };
+
+async function fetchMacroData(symbol) {
+    try {
+        const kline1dRes = await axios.get(`https://api1.binance.com/api/v3/klines?symbol=${symbol}&interval=1d&limit=1`, {timeout:5000});
+        if (kline1dRes.data && kline1dRes.data.length > 0) {
+            const d = kline1dRes.data[0];
+            const dailyOpen = parseFloat(d[1]);
+            const dailyClose = parseFloat(d[4]);
+            const totalVol = parseFloat(d[5]);
+            const takerBuyVol = parseFloat(d[9]);
+            const sellVol = totalVol - takerBuyVol;
+            liveOrderFlow.macroCvdNet = takerBuyVol - sellVol;
+            liveOrderFlow.dailyTrend = dailyClose >= dailyOpen ? 'Bullish' : 'Bearish';
+        }
+
+        const kline4hRes = await axios.get(`https://api1.binance.com/api/v3/klines?symbol=${symbol}&interval=4h&limit=2`, {timeout:5000});
+        if (kline4hRes.data && kline4hRes.data.length === 2) {
+            const prev4h = kline4hRes.data[0];
+            const curr4h = kline4hRes.data[1];
+            const prevClose = parseFloat(prev4h[4]);
+            const currClose = parseFloat(curr4h[4]);
+            liveOrderFlow.macroTrend4h = currClose >= prevClose ? 'Bullish' : 'Bearish';
+        }
+    } catch(err) {
+        console.error("Macro data fetch error:", err.message);
+    }
+}
+setInterval(() => fetchMacroData('BTCUSDT'), 5 * 60 * 1000);
+setTimeout(() => fetchMacroData('BTCUSDT'), 2000);
+
+
 
 let lastWhaleWallBid = null;
 let lastWhaleWallAsk = null;
@@ -1239,9 +1316,25 @@ function generateInternalJarvisAnalysis(data) {
     const wsTrap   = liveOrderFlow.trapAlert;
     const wsSpoof  = liveOrderFlow.spoofAlert;
     const wsSLZone = liveOrderFlow.stopLossZone;
-    const { volatility, imbalance } = data; // SMC structural data removed
+    const { volatility, imbalance } = data; 
 
-    let html = `<strong>[Internal AI]</strong> ${new Date().toLocaleTimeString()} &mdash; লাইভ মার্কেট অ্যানালাইসিস:<br>`;
+    let html = `<strong>[Internal AI - Dual Timeframe Analysis]</strong> ${new Date().toLocaleTimeString()}<br><br>`;
+    html += `<strong>&#127760; Macro View (High Timeframe - 1D/4H):</strong><br>`;
+    if (liveOrderFlow.macroCvdNet) {
+        let macroColor = liveOrderFlow.macroTrend4h === 'Bullish' ? 'var(--buy)' : 'var(--sell)';
+        let mCvdColor = liveOrderFlow.macroCvdNet > 0 ? 'var(--buy)' : 'var(--sell)';
+        html += `4H Trend: <span style="color:${macroColor}">${liveOrderFlow.macroTrend4h}</span> | Daily Trend: ${liveOrderFlow.dailyTrend}<br>`;
+        html += `24H Macro CVD: <span style="color:${mCvdColor}">${liveOrderFlow.macroCvdNet.toFixed(2)} BTC ${liveOrderFlow.macroCvdNet > 0 ? 'bought' : 'sold'}</span><br>`;
+        if (liveOrderFlow.macroTrend4h === 'Bullish' && liveOrderFlow.macroCvdNet > 0) {
+            html += `<span style="color:var(--buy)"><strong>Macro Verdict:</strong> বড় টাইমফ্রেমে মার্কেট স্ট্রং বুলিশ। লং পজিশন হোল্ড করা সেফ। শর্ট টার্ম ডাম্পগুলো শুধু ফেকআউট।</span><br><br>`;
+        } else if (liveOrderFlow.macroTrend4h === 'Bearish' && liveOrderFlow.macroCvdNet < 0) {
+            html += `<span style="color:var(--sell)"><strong>Macro Verdict:</strong> বড় টাইমফ্রেমে মার্কেট স্ট্রং বিয়ারিশ। শর্ট পজিশন হোল্ড করা সেফ। শর্ট টার্ম পাম্পগুলো শুধু ফেকআউট।</span><br><br>`;
+        } else {
+            html += `<span style="color:#f59e0b"><strong>Macro Verdict:</strong> বড় টাইমফ্রেমে মার্কেট কনসোলিডেট (সাইডওয়েজ) করছে। ট্রেন্ড মিক্সড অবস্থায় আছে।</span><br><br>`;
+        }
+    }
+    
+    html += `<strong>&#128300; Micro View (Short Timeframe - Live):</strong><br>`;
     html += `&#128336; <strong>Session:</strong> ${getKillzone()}<br><br>`;
     if (price) html += `Price: <strong>$${parseFloat(price).toLocaleString()}</strong><br>`;
     
@@ -1250,26 +1343,33 @@ function generateInternalJarvisAnalysis(data) {
         html += `Open Interest: <strong>${liveOrderFlow.openInterest.toLocaleString()}</strong> (<span style="color:${oiColor}">${liveOrderFlow.oiTrend}</span>)<br>`;
     }
 
-    // Volatility
+    // Accumulation / Distribution & Volatility
     if (volatility && volatility.stdDevPct <= 0.15) {
-        html += `<span style="color:#f59e0b">&#9889; Squeeze (${volatility.stdDevPct.toFixed(2)}%) &mdash; বড় Spike হতে পারে!</span><br>`;
+        if (cvdNet > 5) {
+            html += `<span style="color:var(--buy)">&#128180; <strong>Accumulation (ইন্সটিটিউশনাল বাইং):</strong> মার্কেট সাইডওয়েজ বা স্থির আছে, কিন্তু ওয়েলসরা প্রচুর বাই (Positive CVD) করে জমাচ্ছে! যেকোনো মুহূর্তে উপরের দিকে বড় Spike (পাম্প) হতে পারে।</span><br>`;
+        } else if (cvdNet < -5) {
+            html += `<span style="color:var(--sell)">&#128184; <strong>Distribution (ইন্সটিটিউশনাল সেলিং):</strong> মার্কেট স্থির আছে, কিন্তু ওয়েলসরা চুপিচুপি সেল (Negative CVD) করে দিচ্ছে! যেকোনো মুহূর্তে নিচের দিকে বড় Spike (ডাম্প) হতে পারে।</span><br>`;
+        } else {
+            html += `<span style="color:#f59e0b">&#9889; <strong>Squeeze:</strong> মার্কেট স্প্রিংয়ের মতো সংকুচিত হয়ে আছে (${volatility.stdDevPct.toFixed(2)}%)। যেকোনো একদিকে বড় ব্রেকআউট আসতে পারে!</span><br>`;
+        }
     } else if (volatility && volatility.stdDevPct > 0.40) {
-        html += `<strong>&#128293; High Volatility (${volatility.stdDevPct.toFixed(2)}%)</strong> &mdash; মার্কেটে বড় ধরনের মুভ চলছে<br>`;
-    } else if (volatility) {
-        html += `Volatility স্বাভাবিক আছে (${volatility.stdDevPct.toFixed(2)}%).<br>`;
+        html += `<strong>&#128293; High Volatility (${volatility.stdDevPct.toFixed(2)}%)</strong> &mdash; মার্কেটে বর্তমানে হিউজ ভলিউম এবং বড় ধরনের মুভমেন্ট চলছে।<br>`;
+    } else {
+        html += `Volatility স্বাভাবিক আছে (${volatility ? volatility.stdDevPct.toFixed(2) : 'N/A'}%).<br>`;
     }
 
-    // Whale Walls & Multi-timeframe Spoofing
-    if (wsBid) html += `&#128011; <span style="color:var(--buy)">Whale Buy Wall: $${wsBid.price.toFixed(2)} (${wsBid.qty.toFixed(2)} BTC) &mdash; নিচে বড় সাপোর্ট আছে</span><br>`;
-    if (wsAsk) html += `&#128011; <span style="color:var(--sell)">Whale Sell Wall: $${wsAsk.price.toFixed(2)} (${wsAsk.qty.toFixed(2)} BTC) &mdash; উপরে বড় রেসিস্টেন্স আছে</span><br>`;
+    // Liquidity Magnets (Whale Walls)
+    if (wsBid) html += `&#129416; <span style="color:var(--buy)"><strong>Liquidity Magnet (Support):</strong> নিচে $${wsBid.price.toFixed(2)} এ বিশাল বায়ারদের দেওয়াল (${wsBid.qty.toFixed(2)} BTC) আছে। মার্কেট নিচে নামলে এখান থেকে বাউন্স করতে পারে।</span><br>`;
+    if (wsAsk) html += `&#129416; <span style="color:var(--sell)"><strong>Liquidity Magnet (Resistance):</strong> উপরে $${wsAsk.price.toFixed(2)} এ বিশাল সেলারদের দেওয়াল (${wsAsk.qty.toFixed(2)} BTC) আছে। মার্কেট উপরের দিকে ম্যাগনেটের মতো এই প্রাইসকে টার্গেট করতে পারে।</span><br>`;
+    
     if (wsSpoof) html += `&#128680; <span style="color:var(--sell)">Live Alert: ${wsSpoof}</span><br>`;
     
     if (data.stats && data.stats.totalValue > 0) {
         let spoofPct = (data.stats.totalSpoofedValue / data.stats.totalValue) * 100;
         if (spoofPct > 40) {
-            html += `&#128373;&#127995; <strong>Multi-Timeframe Spoofing:</strong> মার্কেটে বর্তমানে <span style="color:var(--sell)">${spoofPct.toFixed(1)}% Fake Orders (Spoofed)</span> রয়েছে! মার্কেট ম্যানিপুলেট করা হচ্ছে।<br>`;
+            html += `&#128373;&#127995; <strong>মার্কেট ম্যানিপুলেশন:</strong> মার্কেটে বর্তমানে <span style="color:var(--sell)">${spoofPct.toFixed(1)}% ফেক অর্ডার (Spoofed)</span> রয়েছে! ওয়েলসরা রিটেইলারদের ধোঁকা দিচ্ছে।<br>`;
         } else {
-            html += `&#128373;&#127995; <strong>Multi-Timeframe Spoofing:</strong> মার্কেটে বর্তমানে অর্ডারের <span style="color:var(--buy)">${(100-spoofPct).toFixed(1)}% Authentic</span>। ভলিউম অনেকটাই রিয়েল।<br>`;
+            html += `&#128373;&#127995; <strong>ভলিউম স্ট্যাটাস:</strong> মার্কেটে বর্তমানে অর্ডারের <span style="color:var(--buy)">${(100-spoofPct).toFixed(1)}% রিয়েল (Authentic)</span>। ভলিউম অনেকটাই জেনুইন।<br>`;
         }
     }
 
@@ -1277,12 +1377,10 @@ function generateInternalJarvisAnalysis(data) {
     let isBullishBias = false;
     if (imbalance) {
         if (imbalance.bidRatio > 65) {
-            html += `Order Book: <span style="color:var(--buy)">Extreme Buy Pressure (${imbalance.bidRatio.toFixed(1)}%) &mdash; বায়াররা স্ট্রং পজিশনে আছে</span><br>`;
+            html += `Order Book: <span style="color:var(--buy)">Extreme Buy Pressure (${imbalance.bidRatio.toFixed(1)}%) &mdash; বায়াররা স্ট্রং পজিশনে আছে।</span><br>`;
             isBullishBias = true;
         } else if (imbalance.askRatio > 65) {
-            html += `Order Book: <span style="color:var(--sell)">Extreme Sell Pressure (${imbalance.askRatio.toFixed(1)}%) &mdash; সেলাররা স্ট্রং পজিশনে আছে</span><br>`;
-        } else {
-            html += `Order Book: নিউট্রাল বা স্বাভাবিক অবস্থায় আছে<br>`;
+            html += `Order Book: <span style="color:var(--sell)">Extreme Sell Pressure (${imbalance.askRatio.toFixed(1)}%) &mdash; সেলাররা স্ট্রং পজিশনে আছে।</span><br>`;
         }
     }
 
@@ -1291,8 +1389,6 @@ function generateInternalJarvisAnalysis(data) {
         html += `CVD: <span style="color:var(--buy)">+${cvdNet.toFixed(2)} BTC bought</span> &mdash; স্পট মার্কেটে প্রচুর অ্যাগ্রেসিভ বাইং হচ্ছে।<br>`;
     } else if (cvdNet < -10) {
         html += `CVD: <span style="color:var(--sell)">${cvdNet.toFixed(2)} BTC sold</span> &mdash; স্পট মার্কেটে প্রচুর অ্যাগ্রেসিভ সেলিং হচ্ছে।<br>`;
-    } else {
-        html += `CVD: নিউট্রাল বা স্বাভাবিক।<br>`;
     }
 
     // Trap Probability
@@ -1303,16 +1399,9 @@ function generateInternalJarvisAnalysis(data) {
     } else if (!isBullishBias && cvdNet > 5) {
         trapProb = 85; trapType = 'FAKE DUMP (Bear Trap)';
         html += `<br>&#9888;&#65039; Sell Pressure + Positive CVD = <span style="color:var(--buy)">${trapType}</span>. Trap Probability: <strong>${trapProb}%</strong><br>`;
-    } else {
-        html += `<br>&#9989; কোনো ক্লিয়ার ট্র্যাপ নেই। ${wsSLZone || ''}<br>`;
     }
 
-    // Live trap alert from WebSocket
-    if (wsTrap && !wsTrap.includes('No traps')) {
-        html += `<br>&#128308; Live Alert: <span style="color:var(--sell)">${wsTrap}</span><br>`;
-    }
-
-    // Pure Order Flow Momentum Verdict (NO SMC ZONES)
+    // Pure Order Flow Momentum Verdict
     let bullishScore = 0;
     let bearishScore = 0;
     
@@ -1322,8 +1411,8 @@ function generateInternalJarvisAnalysis(data) {
     if (cvdNet < -10) bearishScore++;
     if (wsBid) bullishScore++;
     if (wsAsk) bearishScore++;
-    if (trapType === 'FAKE DUMP (Bear Trap)') bullishScore += 2; // Very bullish
-    if (trapType === 'FAKE PUMP (Bull Trap)') bearishScore += 2; // Very bearish
+    if (trapType === 'FAKE DUMP (Bear Trap)') bullishScore += 2;
+    if (trapType === 'FAKE PUMP (Bull Trap)') bearishScore += 2;
     
     let verdict = "";
     let verdictColor = "";
@@ -1335,16 +1424,18 @@ function generateInternalJarvisAnalysis(data) {
         verdict = "ফেক ডাম্প (Bear Trap) চলছে! অর্ডার বুকে সেলিং প্রেসার থাকলেও স্পট মার্কেটে ওয়েলসরা বাই করছে (Positive CVD)। মার্কেট উপরে পাম্প করার সম্ভাবনা খুব বেশি। (Long Setup)";
         verdictColor = "var(--buy)";
     } else if (bullishScore > bearishScore + 1) {
-        verdict = "অর্ডার ফ্লো স্ট্রং বুলিশ! স্পট মার্কেটে এগ্রেসিভ বাইং (Positive CVD) এবং বায়ারদের দাপট চলছে। মার্কেট উপরের দিকে যাওয়ার সম্ভাবনা খুব বেশি। (Long Setup)";
+        verdict = "অর্ডার ফ্লো স্ট্রং বুলিশ! স্পট মার্কেটে এগ্রেসিভ বাইং (Positive CVD) এবং বায়ারদের দাপট চলছে। মার্কেট উপরের দিকে পাম্প করার সম্ভাবনা খুব বেশি। (Long Setup)";
         verdictColor = "var(--buy)";
     } else if (bearishScore > bullishScore + 1) {
-        verdict = "অর্ডার ফ্লো স্ট্রং বিয়ারিশ! স্পট মার্কেটে এগ্রেসিভ সেলিং (Negative CVD) এবং সেলারদের দাপট চলছে। মার্কেট নিচের দিকে যাওয়ার সম্ভাবনা খুব বেশি। (Short Setup)";
+        verdict = "অর্ডার ফ্লো স্ট্রং বিয়ারিশ! স্পট মার্কেটে এগ্রেসিভ সেলিং (Negative CVD) এবং সেলারদের দাপট চলছে। মার্কেট নিচের দিকে ডাম্প করার সম্ভাবনা খুব বেশি। (Short Setup)";
         verdictColor = "var(--sell)";
     } else if (volatility && volatility.stdDevPct <= 0.15) {
-        verdict = "মার্কেট ভোলিটিলিটি স্প্রিংয়ের মতো সংকুচিত (Squeeze) হয়ে আছে। যেকোনো একদিকে বড় একটি মুভ (Spike) আসতে পারে। ব্রেকআউটের জন্য সতর্ক থাকুন।";
+        if (cvdNet > 0) verdict = "মার্কেট সংকুচিত (Squeeze) হয়ে আছে, তবে ওয়েলসরা স্পট বাইং করছে। উপরের দিকে ব্রেকআউট হওয়ার সম্ভাবনা বেশি।";
+        else if (cvdNet < 0) verdict = "মার্কেট সংকুচিত (Squeeze) হয়ে আছে, তবে ওয়েলসরা স্পট সেলিং করছে। নিচের দিকে ব্রেকআউট হওয়ার সম্ভাবনা বেশি।";
+        else verdict = "মার্কেট ভোলিটিলিটি স্প্রিংয়ের মতো সংকুচিত (Squeeze) হয়ে আছে। যেকোনো একদিকে বড় ব্রেকআউটের জন্য সতর্ক থাকুন।";
         verdictColor = "#f59e0b";
     } else {
-        verdict = "মার্কেট অর্ডার ফ্লো নিউট্রাল বা কনফিউজিং। বায়ার বা সেলার কারোরই স্পষ্ট নিয়ন্ত্রণ নেই। ট্রেন্ড ক্লিয়ার হওয়া পর্যন্ত ট্রেড থেকে দূরে থাকা ভালো।";
+        verdict = "অর্ডার ফ্লো নিউট্রাল। বায়ার বা সেলার কারোরই স্পষ্ট নিয়ন্ত্রণ নেই। ট্রেন্ড ক্লিয়ার হওয়া পর্যন্ত ট্রেড থেকে দূরে থাকা ভালো।";
         verdictColor = "#9ca3af";
     }
     
