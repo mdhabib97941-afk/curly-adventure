@@ -1,5 +1,12 @@
 import express from 'express';
-import cors from 'cors';
+import cors
+const PORT   = process.env.PORT || 3000;
+let SYMBOL = 'BTCUSDT';
+const BASE   = 'https://data-api.binance.vision';
+
+// Timeframe intervals in milliseconds
+const TF_MS = { '5m': 300000, '15m': 900000, '1h': 3600000, '4h': 14400000, '1d': 86400000 };
+ from 'cors';
 import axios from 'axios';
 import sqlite3 from 'sqlite3';
 import mongoose from 'mongoose';
@@ -46,12 +53,6 @@ app.get('/api/symbol', async (req, res) => {
     res.json({symbol: SYMBOL});
 });
 
-const PORT   = process.env.PORT || 3000;
-let SYMBOL = 'BTCUSDT';
-const BASE   = 'https://data-api.binance.vision';
-
-// Timeframe intervals in milliseconds
-const TF_MS = { '5m': 300000, '15m': 900000, '1h': 3600000, '4h': 14400000, '1d': 86400000 };
 
 // ─── DATABASE ──────────────────────────────────────────────────────────────────
 
