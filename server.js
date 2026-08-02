@@ -1239,20 +1239,12 @@ function generateInternalJarvisAnalysis(data) {
     const wsTrap   = liveOrderFlow.trapAlert;
     const wsSpoof  = liveOrderFlow.spoofAlert;
     const wsSLZone = liveOrderFlow.stopLossZone;
-    const { swingHighs, swingLows, volatility, imbalance } = data;
-    const support    = swingLows  && swingLows.length  > 0 ? swingLows[swingLows.length-1].price.toFixed(2)  : 'N/A';
-    const resistance = swingHighs && swingHighs.length > 0 ? swingHighs[swingHighs.length-1].price.toFixed(2) : 'N/A';
-
-    const fib50 = (support !== 'N/A' && resistance !== 'N/A') ? (parseFloat(resistance) + parseFloat(support)) / 2 : null;
-    let pdZone = '';
-    if (fib50 && price) {
-        if (price > fib50) pdZone = `<span style="color:var(--sell)">Premium Zone (High Risk to Buy)</span>`;
-        else pdZone = `<span style="color:var(--buy)">Discount Zone (High Risk to Sell)</span>`;
-    }
+    const { volatility, imbalance } = data; // SMC structural data removed
 
     let html = `<strong>[Internal AI]</strong> ${new Date().toLocaleTimeString()} &mdash; লাইভ মার্কেট অ্যানালাইসিস:<br>`;
     html += `&#128336; <strong>Session:</strong> ${getKillzone()}<br><br>`;
-    if (price) html += `Price: <strong>$${parseFloat(price).toLocaleString()}</strong> | Zone: ${pdZone}<br>`;
+    if (price) html += `Price: <strong>$${parseFloat(price).toLocaleString()}</strong><br>`;
+    
     if (liveOrderFlow.openInterest) {
         let oiColor = liveOrderFlow.oiTrend === 'Increasing' ? 'var(--buy)' : (liveOrderFlow.oiTrend === 'Decreasing' ? 'var(--sell)' : '#fff');
         html += `Open Interest: <strong>${liveOrderFlow.openInterest.toLocaleString()}</strong> (<span style="color:${oiColor}">${liveOrderFlow.oiTrend}</span>)<br>`;
@@ -1320,7 +1312,7 @@ function generateInternalJarvisAnalysis(data) {
         html += `<br>&#128308; Live Alert: <span style="color:var(--sell)">${wsTrap}</span><br>`;
     }
 
-    // Final Verdict Calculation (Anti-Retail SMC)
+    // Pure Order Flow Momentum Verdict (NO SMC ZONES)
     let bullishScore = 0;
     let bearishScore = 0;
     
@@ -1330,68 +1322,33 @@ function generateInternalJarvisAnalysis(data) {
     if (cvdNet < -10) bearishScore++;
     if (wsBid) bullishScore++;
     if (wsAsk) bearishScore++;
-    if (trapType === 'FAKE DUMP (Bear Trap)') bullishScore += 2;
-    if (trapType === 'FAKE PUMP (Bull Trap)') bearishScore += 2;
+    if (trapType === 'FAKE DUMP (Bear Trap)') bullishScore += 2; // Very bullish
+    if (trapType === 'FAKE PUMP (Bull Trap)') bearishScore += 2; // Very bearish
     
     let verdict = "";
     let verdictColor = "";
-    let isSqueeze = false;
 
-    // Advanced OI & Premium/Discount integration
-    let squeezeType = null;
-    if (fib50 && price > fib50 && liveOrderFlow.oiTrend === 'Decreasing') {
-        squeezeType = 'short_squeeze';
-    } else if (fib50 && price < fib50 && liveOrderFlow.oiTrend === 'Decreasing') {
-        squeezeType = 'long_liquidation';
-    }
-
-    if (squeezeType === 'short_squeeze') {
-        if (cvdNet < 0 || (imbalance && imbalance.askRatio > 60)) {
-            verdict = "ফেক পাম্প রিজেক্ট হয়েছে! সেলাররা স্পট মার্কেটে সেল করছে এবং সাপ্লাই ওয়াল তৈরি হয়েছে। শর্ট (Short) এন্ট্রি নেওয়ার পারফেক্ট সময়।";
-            verdictColor = "var(--sell)";
-        } else {
-            verdict = "মার্কেট Premium Zone-এ আছে কিন্তু Open Interest কমছে! এটি রিয়েল পাম্প নয়, বরং Short Squeeze (ফেক পাম্প)। শর্ট করার জন্য রিজেকশনের অপেক্ষা করুন।";
-            verdictColor = "#f59e0b";
-        }
-        isSqueeze = true;
-    } else if (squeezeType === 'long_liquidation') {
-        if (cvdNet > 0 || (imbalance && imbalance.bidRatio > 60)) {
-            verdict = "ফেক ডাম্প রিজেক্ট হয়েছে! বায়াররা স্পট মার্কেটে বাই করছে এবং ডিমান্ড ওয়াল তৈরি হয়েছে। লং (Long) এন্ট্রি নেওয়ার পারফেক্ট সময়।";
-            verdictColor = "var(--buy)";
-        } else {
-            verdict = "মার্কেট Discount Zone-এ আছে কিন্তু Open Interest কমছে! এটি রিয়েল ডাম্প নয়, বরং Long Liquidation (ফেক ডাম্প)। লং করার জন্য সাপোর্ট বাউন্সের অপেক্ষা করুন।";
-            verdictColor = "#f59e0b";
-        }
-        isSqueeze = true;
-    } else if (!isSqueeze) {
-        if (bullishScore > bearishScore + 1) {
-            if (fib50 && price < fib50) {
-                verdict = "ইনস্টিটিউশনাল অর্ডার ফ্লো বুলিশ এবং প্রাইস Discount Zone-এ আছে! এটি একটি পারফেক্ট লং (Long) সেটআপ। মার্কেট উপরের দিকে পাম্প করার সম্ভাবনা খুব বেশি।";
-            } else {
-                verdict = "ইনস্টিটিউশনাল অর্ডার ফ্লো বুলিশ, কিন্তু প্রাইস Premium Zone-এ আছে (Overbought)। এখনই লং করা রিস্কি, প্রাইস Discount Zone-এ আসার জন্য অপেক্ষা করুন।";
-            }
-            verdictColor = "var(--buy)";
-        } else if (bearishScore > bullishScore + 1) {
-            if (fib50 && price > fib50) {
-                verdict = "ইনস্টিটিউশনাল অর্ডার ফ্লো বিয়ারিশ এবং প্রাইস Premium Zone-এ আছে! এটি একটি পারফেক্ট শর্ট (Short) সেটআপ। মার্কেট নিচের দিকে ডাম্প করার সম্ভাবনা খুব বেশি।";
-            } else {
-                verdict = "ইনস্টিটিউশনাল অর্ডার ফ্লো বিয়ারিশ, কিন্তু প্রাইস Discount Zone-এ আছে (Oversold)। এখনই শর্ট করা রিস্কি, প্রাইস Premium Zone-এ যাওয়ার জন্য অপেক্ষা করুন।";
-            }
-            verdictColor = "var(--sell)";
-        } else {
-            verdict = "মার্কেট সাইডওয়েজ বা কনফিউজিং। কোনো ক্লিয়ার ডাইরেকশন নেই, ট্রেড থেকে দূরে থাকুন।";
-            verdictColor = "#9ca3af";
-        }
+    if (trapType === 'FAKE PUMP (Bull Trap)') {
+        verdict = "ফেক পাম্প (Bull Trap) চলছে! অর্ডার বুকে বাইং প্রেসার থাকলেও স্পট মার্কেটে ওয়েলসরা সেল করছে (Negative CVD)। মার্কেট নিচে ডাম্প করার সম্ভাবনা খুব বেশি। (Short Setup)";
+        verdictColor = "var(--sell)";
+    } else if (trapType === 'FAKE DUMP (Bear Trap)') {
+        verdict = "ফেক ডাম্প (Bear Trap) চলছে! অর্ডার বুকে সেলিং প্রেসার থাকলেও স্পট মার্কেটে ওয়েলসরা বাই করছে (Positive CVD)। মার্কেট উপরে পাম্প করার সম্ভাবনা খুব বেশি। (Long Setup)";
+        verdictColor = "var(--buy)";
+    } else if (bullishScore > bearishScore + 1) {
+        verdict = "অর্ডার ফ্লো স্ট্রং বুলিশ! স্পট মার্কেটে এগ্রেসিভ বাইং (Positive CVD) এবং বায়ারদের দাপট চলছে। মার্কেট উপরের দিকে যাওয়ার সম্ভাবনা খুব বেশি। (Long Setup)";
+        verdictColor = "var(--buy)";
+    } else if (bearishScore > bullishScore + 1) {
+        verdict = "অর্ডার ফ্লো স্ট্রং বিয়ারিশ! স্পট মার্কেটে এগ্রেসিভ সেলিং (Negative CVD) এবং সেলারদের দাপট চলছে। মার্কেট নিচের দিকে যাওয়ার সম্ভাবনা খুব বেশি। (Short Setup)";
+        verdictColor = "var(--sell)";
+    } else if (volatility && volatility.stdDevPct <= 0.15) {
+        verdict = "মার্কেট ভোলিটিলিটি স্প্রিংয়ের মতো সংকুচিত (Squeeze) হয়ে আছে। যেকোনো একদিকে বড় একটি মুভ (Spike) আসতে পারে। ব্রেকআউটের জন্য সতর্ক থাকুন।";
+        verdictColor = "#f59e0b";
+    } else {
+        verdict = "মার্কেট অর্ডার ফ্লো নিউট্রাল বা কনফিউজিং। বায়ার বা সেলার কারোরই স্পষ্ট নিয়ন্ত্রণ নেই। ট্রেন্ড ক্লিয়ার হওয়া পর্যন্ত ট্রেড থেকে দূরে থাকা ভালো।";
+        verdictColor = "#9ca3af";
     }
     
-    let targetMsg = '';
-    if (bullishScore > bearishScore + 1 && resistance !== 'N/A') {
-        targetMsg = `<br><br>🎯 <strong>Target (Take Profit):</strong> প্রাইস উপরের রেসিস্টেন্স <strong>$${resistance}</strong> সুইপ করতে পারে।`;
-    } else if (bearishScore > bullishScore + 1 && support !== 'N/A') {
-        targetMsg = `<br><br>🎯 <strong>Target (Take Profit):</strong> প্রাইস নিচের সাপোর্ট <strong>$${support}</strong> সুইপ করতে পারে।`;
-    }
-    
-    html += `<br><hr style="border-color:#334155; margin:10px 0;"><strong style="font-size:1.1em;">&#128161; চূড়ান্ত সিদ্ধান্ত (Verdict):</strong> <span style="color:${verdictColor}; font-weight:bold;">${verdict}</span>${targetMsg}<br>`;
+    html += `<br><hr style="border-color:#334155; margin:10px 0;"><strong style="font-size:1.1em;">&#128161; চূড়ান্ত সিদ্ধান্ত (Verdict):</strong> <span style="color:${verdictColor}; font-weight:bold;">${verdict}</span><br>`;
 
     return html;
 }
