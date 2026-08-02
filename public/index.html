@@ -1986,7 +1986,7 @@ async function buildVolumeProfile(symbol) {
     try {
         const sym = symbol || 'BTCUSDT';
         // Fetch last 200 candles on 15m for a solid volume profile
-        const res = await fetch(`${getRestBase()}/klines?symbol=${sym}&interval=15m&limit=200`);
+        const res = await fetch(`${getRestBase()}/klines?symbol=${sym}&interval=1h&limit=300`);
         const klines = await res.json();
 
         if(!klines || !klines.length) { el.innerHTML = '<div class="empty">No data</div>'; return; }
@@ -2024,11 +2024,11 @@ async function buildVolumeProfile(symbol) {
         // POC = bucket with highest volume
         const pocIdx = buckets.reduce((mi, b, i, arr) => b.vol > arr[mi].vol ? i : mi, 0);
 
-        // Render top 10 by volume (sorted desc) reversed to show highest at top
+        // Sort by PRICE (descending) so it matches the chart Y-axis (Upside on top, Downside on bottom)
         const sorted = [...buckets]
             .map((b,i) => ({...b, idx: i}))
-            .sort((a,b) => b.vol - a.vol)
-            .slice(0, 10);
+            .filter(b => b.vol > 0) // Remove empty buckets
+            .sort((a,b) => b.priceHigh - a.priceHigh);
 
         const baseAsset = sym.replace('USDT','');
         const fmtV = n => n >= 1e6 ? (n/1e6).toFixed(1)+'M' : n >= 1e3 ? (n/1e3).toFixed(0)+'K' : n.toFixed(0);
