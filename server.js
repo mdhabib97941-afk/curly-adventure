@@ -1113,6 +1113,8 @@ app.get('/api/brain/insights', (req, res) => {
 
 // ─── LIVE ORDER FLOW & RETAIL TRAP TRACKING (WebSockets) ────────────────────
 let liveOrderFlow = {
+    vpPOC: null,
+    vpDesc: '',
     whaleWallBid: null, // { price, qty }
     whaleWallAsk: null, // { price, qty }
     cvd: 0,
@@ -1800,5 +1802,50 @@ app.get('/api/liq-heatmap', (req, res) => {
         }
     });
 });
+
+
+// --- Volume Profile (POC) Backend Engine ---
+async function updateVolumeProfile() {
+    try {
+        const res = await axios.get('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1h&limit=300');
+        const klines = res.data;
+        if (!klines || !klines.length) return;
+
+        const prices = klines.map(k => (parseFloat(k[2]) + parseFloat(k[3])) / 2); // mid price
+        const vols   = klines.map(k => parseFloat(k[5]));
+        const minP = Math.min(...prices);
+        const maxP = Math.max(...prices);
+        const BUCKETS = 12;
+        const bucketSize = (maxP - minP) / BUCKETS;
+
+        const buckets = Array.from({length: BUCKETS}, (_,i) => ({
+            priceLow:  minP + i * bucketSize,
+            priceHigh: minP + (i+1) * bucketSize,
+            vol: 0
+        }));
+
+        klines.forEach(k => {
+            const mid = (parseFloat(k[2]) + parseFloat(k[3])) / 2;
+            const vol = parseFloat(k[5]);
+            const idx = Math.min(Math.floor((mid - minP) / bucketSize), BUCKETS - 1);
+            buckets[idx].vol += vol;
+        });
+
+        // Find POC
+        let maxV = 0;
+        let pocBucket = null;
+        buckets.forEach(b => {
+            if(b.vol > maxV) { maxV = b.vol; pocBucket = b; }
+        });
+
+        if (pocBucket) {
+            liveOrderFlow.vpPOC = (pocBucket.priceLow + pocBucket.priceHigh) / 2;
+        }
+    } catch (e) {
+        console.log("Error updating VP:", e.message);
+    }
+}
+setInterval(updateVolumeProfile, 5 * 60 * 1000); // Every 5 mins
+updateVolumeProfile(); // Initial run
 
 app.listen(PORT, () => console.log(`[SERVER] Alpha-Flow SMC Brain v4 running on port ${PORT}`));
