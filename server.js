@@ -1721,15 +1721,23 @@ function generateInternalJarvisAnalysis(data) {
     html += '<br><hr style="border-color:#333; margin:15px 0;">';
     let verdictStr = '';
     if (trapType === 'Bear Trap' || (is1DBull && cvdNet > 10)) {
-        verdictStr = '<span style="color:var(--buy)">ফেক ডাম্প (Bear Trap) চলছে! অর্ডার বুকে সেলিং প্রেসার থাকলেও স্পট মার্কেটে ওয়েলসরা বাই করছে (Positive CVD)। মার্কেট উপরে পাম্প করার সম্ভাবনা খুব বেশি। (Long Setup)</span>';
+        if (typeof spoofIntent !== 'undefined' && spoofIntent === 'Distribution') {
+            verdictStr = '<span style="color:#f59e0b">স্ক্যাল্পিং এর জন্য শর্ট-টার্মে ফেক ডাম্প (Bear Trap) চলছে, কিন্তু স্পুফিং ডেটা বলছে এই পাম্পটি টিকবে না (Distribution/Fake Breakout)। লং পজিশন নিলে দ্রুত প্রফিট বুক করুন!</span>';
+        } else {
+            verdictStr = '<span style="color:var(--buy)">ফেক ডাম্প (Bear Trap) চলছে! অর্ডার বুকে সেলিং প্রেসার থাকলেও স্পট মার্কেটে ওয়েলসরা বাই করছে (Positive CVD)। মার্কেট উপরে পাম্প করার সম্ভাবনা খুব বেশি। (Long Setup)</span>';
+        }
     } else if (trapType === 'Bull Trap' || (is1DBear && cvdNet < -10)) {
-        verdictStr = '<span style="color:var(--sell)">ফেক পাম্প (Bull Trap) চলছে! অর্ডার বুকে বাইং প্রেসার থাকলেও স্পট মার্কেটে ওয়েলসরা সেল করছে (Negative CVD)। মার্কেট নিচে ডাম্প করার সম্ভাবনা খুব বেশি। (Short Setup)</span>';
+        if (typeof spoofIntent !== 'undefined' && spoofIntent === 'Accumulation') {
+            verdictStr = '<span style="color:#f59e0b">স্ক্যাল্পিং এর জন্য শর্ট-টার্মে ফেক পাম্প (Bull Trap) চলছে, কিন্তু স্পুফিং ডেটা বলছে এই ডাম্পটি টিকবে না (Accumulation/Fake Breakdown)। শর্ট পজিশন নিলে দ্রুত প্রফিট বুক করুন!</span>';
+        } else {
+            verdictStr = '<span style="color:var(--sell)">ফেক পাম্প (Bull Trap) চলছে! অর্ডার বুকে বায়িং প্রেসার থাকলেও স্পট মার্কেটে ওয়েলসরা সেল করছে (Negative CVD)। মার্কেট নিচে ডাম্প করার সম্ভাবনা খুব বেশি। (Short Setup)</span>';
+        }
     } else if (ls > 2.0 && is4HBear) {
-        verdictStr = '<span style="color:var(--sell)">রিটেইল ট্রেডাররা হিউজ লং পজিশন নিয়ে বসে আছে (Long/Short > 2.0) এবং ম্যাক্রো ট্রেন্ড বিয়ারিশ। ওয়েলসরা লং-দের লিকুইডেট করার জন্য ডাম্প করতে পারে। (High Risk)</span>';
+        verdictStr = '<span style="color:var(--sell)">রিটেইলাররা মাত্রাতিরিক্ত লং করে বসে আছে (Long/Short > 2.0) এবং ট্রেন্ড বিয়ারিশ - মার্কেট স্কুইজ করে তাদের লিকুইডেট করতে পারে (High Risk)</span>';
     } else if (ls < 0.8 && is4HBull) {
-        verdictStr = '<span style="color:var(--buy)">রিটেইল ট্রেডাররা হিউজ শর্ট পজিশন নিয়ে বসে আছে (Long/Short < 0.8) এবং ম্যাক্রো ট্রেন্ড বুলিশ। শর্ট স্কুইজ (Short Squeeze) হওয়ার চান্স অনেক বেশি। (Long Setup)</span>';
+        verdictStr = '<span style="color:var(--buy)">রিটেইলাররা ভয় পেয়ে শর্ট করছে (Long/Short < 0.8) যা একটি ভালো (Short Squeeze) তৈরি করতে পারে। (Long Setup)</span>';
     } else {
-        verdictStr = '<span style="color:#f59e0b">মার্কেটে বর্তমানে ক্লিয়ার কোনো ডিরেকশন নেই। ওয়েলসরা চপি মুভমেন্ট করে রিটেইলারদের স্টপ লস হান্ট করছে। স্ক্যাল্পিং ছাড়া কোনো পজিশন নেওয়া রিস্কি।</span>';
+        verdictStr = '<span style="color:#f59e0b">মার্কেটে বর্তমানে ক্লিয়ার কোনো ডিরেকশন নেই। ওয়েলসরা চাপি মুভমেন্ট করে রিটেইলারদের স্টপ লস হান্ট করছে। স্ক্যাল্পিং ছাড়া কোনো পজিশন নেওয়া রিস্কি।</span>';
     }
     html += '&#128161; <strong>চূড়ান্ত সিদ্ধান্ত (Verdict):</strong> ' + verdictStr;
 
