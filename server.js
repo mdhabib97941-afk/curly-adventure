@@ -46,6 +46,68 @@ app.get('/api/symbol', async (req, res) => {
     res.json({symbol: SYMBOL});
 });
 
+
+// 7. Jarvis AI Analysis Endpoint
+app.post('/api/jarvis-ai', async (req, res) => {
+    try {
+        const { stats, tf, currentPrice, cvdData, swingHighs, swingLows, instZones, signal, volatility, imbalance } = req.body;
+        
+        let analysis = [];
+        
+        if (signal && signal.signal !== 'WAIT') {
+            const color = signal.signal === 'BUY' ? 'var(--buy)' : 'var(--sell)';
+            analysis.push(`🤖 <b>Jarvis AI Signal:</b> Jarvis detects a high-confidence <span style="color: ${color}">${signal.signal}</span> SMC setup.
+            <br>🎯 <b>Entry Zone:</b> $${signal.entry}
+            <br>🛑 <b>Stop Loss:</b> $${signal.stop_loss}
+            <br>🤑 <b>Take Profit:</b> $${signal.take_profit}
+            <br>💡 <b>Reason:</b> ${signal.reason}`);
+        } else {
+            analysis.push(`🤖 <b>Jarvis AI State:</b> Market is currently neutral or choppy. Waiting for a clear Institutional setup to form before taking trades.`);
+        }
+        
+        if (swingHighs && swingHighs.length > 0) {
+            const nearestHigh = swingHighs[swingHighs.length - 1];
+            if (currentPrice < nearestHigh.price && nearestHigh.price - currentPrice < 500) {
+                analysis.push(`⚠️ <b>Sell-Side Trap Warning (Bull Trap):</b> Price is approaching the previous Swing High ($${nearestHigh.price.toFixed(0)}). Retail traders usually buy breakouts here, but Whales are likely waiting to sweep this liquidity and crash the price down to support (Distribution Phase).`);
+            }
+        }
+        if (swingLows && swingLows.length > 0) {
+            const nearestLow = swingLows[swingLows.length - 1];
+            if (currentPrice > nearestLow.price && currentPrice - nearestLow.price < 500) {
+                analysis.push(`⚠️ <b>Buy-Side Trap Warning (Bear Trap):</b> Price is approaching the previous Swing Low ($${nearestLow.price.toFixed(0)}). Retailers panic and sell here, but Smart Money is quietly buying and preparing to pump the price (Accumulation Phase).`);
+            }
+        }
+        
+        if (volatility && volatility.stdDevPct <= 0.15) {
+            analysis.push(`⚡ <b>Massive Squeeze Detected:</b> The market is heavily compressed (Volatility: ${volatility.stdDevPct.toFixed(2)}%). A massive breakout spike is imminent! Keep an eye on the CVD to confirm the direction.`);
+        } else if (volatility && volatility.stdDevPct > 0.40) {
+            analysis.push(`🌪️ <b>High Volatility & Manipulation:</b> Trade with extreme caution! Whales are actively hunting stop-losses on both sides with large wicks.`);
+        }
+        
+        if (imbalance) {
+            if (imbalance.bidRatio > 65) {
+                analysis.push(`📈 <b>Orderbook Bias (Bullish):</b> Whales are stacking massive <b>BUY WALLS</b> (${imbalance.bidRatio.toFixed(1)}% Bids). There is very strong hidden support below.`);
+            } else if (imbalance.askRatio > 65) {
+                analysis.push(`📉 <b>Orderbook Bias (Bearish):</b> Whales are stacking massive <b>SELL WALLS</b> (${imbalance.askRatio.toFixed(1)}% Asks). Heavy resistance is blocking the price from going up.`);
+            }
+        }
+        
+        if (cvdData && signal) {
+            if (cvdData.netCvd > 0 && signal.signal === 'SELL') {
+                analysis.push(`🚨 <b>CVD Divergence (Trap):</b> Retail traders are aggressively buying (CVD is Positive), but our SMC structure shows a SELL setup. This is a classic Bull Trap by Market Makers!`);
+            } else if (cvdData.netCvd < 0 && signal.signal === 'BUY') {
+                analysis.push(`🚨 <b>CVD Divergence (Trap):</b> Retail traders are panic selling (CVD is Negative), but our SMC structure shows a BUY setup. This is a classic Bear Trap!`);
+            }
+        }
+        
+        const html = analysis.join('<br><br>');
+        res.json({ success: true, html });
+    } catch (err) {
+        res.json({ success: false, error: err.message });
+    }
+});
+
+
 const PORT   = process.env.PORT || 3000;
 let SYMBOL = 'BTCUSDT';
 const BASE   = 'https://data-api.binance.vision';
@@ -698,11 +760,11 @@ app.get('/api/btc-radar', async(req, res) => {
                 };
             };
             
-            spoofStats['5m'] = calculateSpoof(last1440.slice(0, 5)) || spoofStats['5m'];
-            spoofStats['15m'] = calculateSpoof(last1440.slice(0, 15)) || spoofStats['15m'];
-            spoofStats['1h'] = calculateSpoof(last1440.slice(0, 60)) || spoofStats['1h'];
-            spoofStats['4h'] = calculateSpoof(last1440.slice(0, 240)) || spoofStats['4h'];
-            spoofStats['24h'] = calculateSpoof(last1440) || spoofStats['24h'];
+            spoofStats['5m'] = calculateSpoof(last1440.slice(0, 1)) || spoofStats['5m'];
+            spoofStats['15m'] = calculateSpoof(last1440.slice(0, 3)) || spoofStats['15m'];
+            spoofStats['1h'] = calculateSpoof(last1440.slice(0, 12)) || spoofStats['1h'];
+            spoofStats['4h'] = calculateSpoof(last1440.slice(0, 48)) || spoofStats['4h'];
+            spoofStats['24h'] = calculateSpoof(last1440.slice(0, 288)) || spoofStats['24h'];
         }
 
         res.json({
@@ -1350,7 +1412,14 @@ function generateInternalJarvisAnalysis(data) {
         }
     }
     
-    html += `<br><hr style="border-color:#334155; margin:10px 0;"><strong style="font-size:1.1em;">&#128161; চূড়ান্ত সিদ্ধান্ত (Verdict):</strong> <span style="color:${verdictColor}; font-weight:bold;">${verdict}</span><br>`;
+        let targetMsg = '';
+    if (bullishScore > bearishScore + 1 && resistance !== 'N/A') {
+        targetMsg = `<br>&#128226; <strong>Target:</strong> প্রাইস পাম্প করে উপরের রেসিস্টেন্স <strong>$${resistance}</strong> সুইপ করতে পারে।`;
+    } else if (bearishScore > bullishScore + 1 && support !== 'N/A') {
+        targetMsg = `<br>&#128226; <strong>Target:</strong> প্রাইস ডাম্প করে নিচের সাপোর্ট <strong>$${support}</strong> সুইপ করতে পারে।`;
+    }
+    
+    html += `<br><hr style="border-color:#334155; margin:10px 0;"><strong style="font-size:1.1em;">&#128161; চূড়ান্ত সিদ্ধান্ত (Verdict):</strong> <span style="color:${verdictColor}; font-weight:bold;">${verdict}</span>${targetMsg}<br>`;
 
     return html;
 }
@@ -1360,7 +1429,17 @@ app.post('/api/jarvis-ai', async (req, res) => {
         const apiKey = process.env.GEMINI_API_KEY;
         if (!apiKey) return res.status(400).json({ error: "GEMINI_API_KEY environment variable is not set." });
         
-        const prompt = "You are JARVIS. Give a 3 sentence market analysis in Bengali.";
+        
+        // Pass all the market data to the Online AI
+        const prompt = `You are JARVIS, an elite Smart Money trading AI. Analyze this live Bitcoin data and give a precise, 3-sentence trading analysis in Bengali (including target levels). Data: 
+        Price: ${req.body.currentPrice}, 
+        CVD (15m): ${req.body.cvdData?.netCvd}, 
+        Volatility (Squeeze): ${req.body.volatility?.stdDevPct}%, 
+        Orderbook Bias: Bids ${req.body.imbalance?.bidRatio}%, Asks ${req.body.imbalance?.askRatio}%, 
+        Spoofed Orders (5m to 24h): ${JSON.stringify(req.body.stats)},
+        Swing High: ${req.body.swingHighs?.[req.body.swingHighs.length-1]?.price}, 
+        Swing Low: ${req.body.swingLows?.[req.body.swingLows.length-1]?.price}. 
+        Keep it professional, action-oriented, and strictly in Bengali.`;
         const models = ['gemini-2.5-flash', 'gemini-2.0-flash'];
         let resultHtml = null;
         for (const model of models) {
