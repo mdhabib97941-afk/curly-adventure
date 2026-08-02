@@ -1459,43 +1459,105 @@ function generateInternalJarvisAnalysis(data) {
     const cvdNet   = liveOrderFlow.cvd || (data.cvdData ? data.cvdData.netCvd : 0);
     const wsBid    = liveOrderFlow.whaleWallBid;
     const wsAsk    = liveOrderFlow.whaleWallAsk;
+    const wsTrap   = liveOrderFlow.trapAlert;
+    const wsSpoof  = liveOrderFlow.spoofAlert;
+    const wsSLZone = liveOrderFlow.stopLossZone;
+    const { swingHighs, swingLows, volatility, imbalance } = data;
     
-    let html = `<strong>[Internal AI]</strong> ${new Date().toLocaleTimeString()} &mdash; মার্কেট আপডেট:<br><br>`;
-    
-    // Macro View
-    html += `&#128200; <strong>Macro View (High Timeframe - 1D/4H):</strong><br>`;
+    // Default Macro Data
+    let trend1D = 'Neutral', trend4H = 'Neutral', macroCVD = 0;
     if (liveOrderFlow.macroData) {
-        html += `&nbsp;&nbsp;&mdash; 1D Trend: <strong>${liveOrderFlow.macroData.trend1D}</strong><br>`;
-        html += `&nbsp;&nbsp;&mdash; 4H Trend: <strong>${liveOrderFlow.macroData.trend4H}</strong><br>`;
-    } else {
-        html += `&nbsp;&nbsp;&mdash; Macro data loading...<br>`;
+        trend1D = liveOrderFlow.macroData.trend1D;
+        trend4H = liveOrderFlow.macroData.trend4H;
+        macroCVD = liveOrderFlow.macroData.macroCVD;
     }
-    
-    html += `<br>&#128269; <strong>Micro View (Live Order Flow):</strong><br>`;
-    
-    // CVD & Imbalance
-    if (cvdNet > 10) html += `&nbsp;&nbsp;&mdash; <span style="color:var(--buy)">Strong Buy CVD (+${cvdNet.toFixed(2)} BTC)</span><br>`;
-    else if (cvdNet < -10) html += `&nbsp;&nbsp;&mdash; <span style="color:var(--sell)">Strong Sell CVD (${cvdNet.toFixed(2)} BTC)</span><br>`;
-    else html += `&nbsp;&nbsp;&mdash; Neutral CVD (${cvdNet.toFixed(2)} BTC)<br>`;
 
-    // Open Interest
+    let html = `<strong>[Internal AI - Dual Timeframe Analysis]</strong> ${new Date().toLocaleTimeString()}<br><br>`;
+
+    // ==========================================
+    // 1. MACRO VIEW
+    // ==========================================
+    html += `&#127183; <strong>Macro View (High Timeframe - 1D/4H):</strong><br>`;
+    
+    let t1Color = trend1D === 'Bullish' ? 'var(--buy)' : (trend1D === 'Bearish' ? 'var(--sell)' : '#fff');
+    let t4Color = trend4H === 'Bullish' ? 'var(--buy)' : (trend4H === 'Bearish' ? 'var(--sell)' : '#fff');
+    html += `4H Trend: <span style="color:${t4Color}">${trend4H}</span> | Daily Trend: <span style="color:${t1Color}">${trend1D}</span><br>`;
+    
+    if (macroCVD > 0) {
+        html += `24H Macro CVD: <span style="color:var(--buy)">${macroCVD.toFixed(2)} BTC bought</span><br>`;
+    } else if (macroCVD < 0) {
+        html += `24H Macro CVD: <span style="color:var(--sell)">${macroCVD.toFixed(2)} BTC sold</span><br>`;
+    } else {
+        html += `24H Macro CVD: Neutral<br>`;
+    }
+
+    // Macro Verdict Bengali
+    if (trend1D === 'Bullish' && trend4H === 'Bullish') {
+        html += `Macro Verdict: <span style="color:var(--buy)">বড় টাইমফ্রেমে মার্কেট স্ট্রং বুলিশ। লং পজিশন হোল্ড করা সেফ। শর্ট টার্ম ডাম্পগুলো শুধু ফেকআউট।</span><br>`;
+    } else if (trend1D === 'Bearish' && trend4H === 'Bearish') {
+        html += `Macro Verdict: <span style="color:var(--sell)">বড় টাইমফ্রেমে মার্কেট স্ট্রং বিয়ারিশ। শর্ট পজিশন হোল্ড করা সেফ। শর্ট টার্ম পাম্পগুলো শুধু ফেকআউট।</span><br>`;
+    } else {
+        html += `Macro Verdict: <span style="color:#f59e0b">বড় টাইমফ্রেমে মার্কেট চপি (Choppy) বা রেঞ্জিং। ট্রেন্ড ক্লিয়ার নয়।</span><br>`;
+    }
+
+    // ==========================================
+    // 2. MICRO VIEW
+    // ==========================================
+    html += `<br>&#128300; <strong>Micro View (Short Timeframe - Live):</strong><br>`;
+    html += `&#9201;&#65039; <strong>Session:</strong> ${getKillzone()}<br><br>`;
+    
+    if (price) html += `Price: <strong>$${parseFloat(price).toLocaleString()}</strong><br>`;
+    
     if (liveOrderFlow.openInterest) {
         let oiColor = liveOrderFlow.oiTrend === 'Increasing' ? 'var(--buy)' : (liveOrderFlow.oiTrend === 'Decreasing' ? 'var(--sell)' : '#fff');
-        html += `&nbsp;&nbsp;&mdash; Open Interest: <strong>${liveOrderFlow.openInterest.toLocaleString()}</strong> (<span style="color:${oiColor}">${liveOrderFlow.oiTrend}</span>)<br>`;
+        html += `Open Interest: <strong>${liveOrderFlow.openInterest.toLocaleString()}</strong> (<span style="color:${oiColor}">${liveOrderFlow.oiTrend}</span>)<br>`;
     }
-    
-    // Whale Walls
-    if (wsBid) html += `&nbsp;&nbsp;&mdash; &#128011; <span style="color:var(--buy)">Whale Buy Wall: $${wsBid.price.toFixed(2)} (${wsBid.qty.toFixed(2)} BTC)</span><br>`;
-    if (wsAsk) html += `&nbsp;&nbsp;&mdash; &#128011; <span style="color:var(--sell)">Whale Sell Wall: $${wsAsk.price.toFixed(2)} (${wsAsk.qty.toFixed(2)} BTC)</span><br>`;
 
-    // Hedge Fund Logic (Leverage & Liquidations)
-    let fr = liveOrderFlow.fundingRate;
-    let ls = liveOrderFlow.longShortRatio;
-    let liq = liveOrderFlow.recentLiquidations;
-    let hist = liveOrderFlow.history24H;
+    // Volatility
+    if (volatility && volatility.stdDevPct <= 0.15) {
+        html += `&#9889; <span style="color:#f59e0b">Low Volatility (${volatility.stdDevPct.toFixed(2)}%) &mdash; মার্কেট স্কুইজ হচ্ছে, বড় ব্রেকআউট বা স্পাইক আসতে পারে!</span><br>`;
+    } else if (volatility && volatility.stdDevPct > 0.40) {
+        html += `&#128293; <span style="color:var(--sell)">High Volatility (${volatility.stdDevPct.toFixed(2)}%) &mdash; মার্কেটে বর্তমানে হিউজ ভলিউম এবং বড় ধরনের মুভমেন্ট চলছে।</span><br>`;
+    }
+
+    // Liquidity Magnets (Walls)
+    if (wsAsk) html += `&#127786;&#65039; <span style="color:var(--sell)">Liquidity Magnet (Resistance): উপরে $${wsAsk.price.toFixed(2)} এ বিশাল সেলারদের দেওয়াল (${wsAsk.qty.toFixed(2)} BTC) আছে। মার্কেট উপরের দিকে ম্যাগনেটের মতো এই প্রাইসকে টার্গেট করতে পারে।</span><br>`;
+    if (wsBid) html += `&#127786;&#65039; <span style="color:var(--buy)">Liquidity Magnet (Support): নিচে $${wsBid.price.toFixed(2)} এ বিশাল বায়ারদের দেওয়াল (${wsBid.qty.toFixed(2)} BTC) আছে। মার্কেট নিচের দিকে ম্যাগনেটের মতো এই প্রাইসকে টার্গেট করতে পারে।</span><br>`;
+
+    // Spoofing
+    if (wsSpoof) html += `&#128680; <span style="color:var(--sell)">Live Alert: ${wsSpoof} (Spoofing Detected)</span><br>`;
+
+    // CVD
+    if (cvdNet > 10) html += `CVD: <span style="color:var(--buy)">+${cvdNet.toFixed(2)} BTC bought &mdash; স্পট মার্কেটে প্রচুর অ্যাগ্রেসিভ বাইং হচ্ছে।</span><br>`;
+    else if (cvdNet < -10) html += `CVD: <span style="color:var(--sell)">${cvdNet.toFixed(2)} BTC sold &mdash; স্পট মার্কেটে প্রচুর অ্যাগ্রেসিভ সেলিং হচ্ছে।</span><br>`;
+
+    // Trap
+    let isBullishBias = false;
+    if (imbalance && imbalance.bidRatio > 65) isBullishBias = true;
+    
+    let trapProb = 20, trapType = 'None';
+    if (isBullishBias && cvdNet < 0) { trapProb = 85; trapType = 'Bull Trap'; }
+    if (!isBullishBias && cvdNet > 0) { trapProb = 85; trapType = 'Bear Trap'; }
+    if (wsTrap && wsTrap.includes('Bull Trap')) { trapProb = 95; trapType = 'Bull Trap'; }
+    if (wsTrap && wsTrap.includes('Bear Trap')) { trapProb = 95; trapType = 'Bear Trap'; }
+
+    if (trapType === 'Bear Trap') {
+        html += `<br>&#9888;&#65039; <span style="color:var(--buy)">Sell Pressure + Positive CVD = FAKE DUMP (Bear Trap). Trap Probability: ${trapProb}%</span><br>`;
+    } else if (trapType === 'Bull Trap') {
+        html += `<br>&#9888;&#65039; <span style="color:var(--sell)">Buy Pressure + Negative CVD = FAKE PUMP (Bull Trap). Trap Probability: ${trapProb}%</span><br>`;
+    }
+
+    // ==========================================
+    // 3. HEDGE FUND DESK
+    // ==========================================
+    let fr = liveOrderFlow.fundingRate || 0;
+    let ls = liveOrderFlow.longShortRatio || 0;
+    let liq = liveOrderFlow.recentLiquidations || { long: 0, short: 0, longVol: 0, shortVol: 0 };
+    let hist = liveOrderFlow.history24H || {};
     
     if (ls > 0) {
-        html += `<br><strong>&#127976; Hedge Fund Desk (Leverage & Liquidations):</strong><br>`;
+        html += `<br><hr style="border-color:#333; margin:15px 0;">`;
+        html += `<strong>&#127976; Hedge Fund Desk (Leverage & Liquidations):</strong><br>`;
         
         let frColor = fr > 0.0001 ? "var(--sell)" : (fr < -0.0001 ? "var(--buy)" : "#fff");
         let frType = fr > 0.0001 ? "Extreme Long Leverage (Risk of Long Squeeze)" : (fr < -0.0001 ? "Extreme Short Leverage (Risk of Short Squeeze)" : "Neutral Funding");
@@ -1505,20 +1567,39 @@ function generateInternalJarvisAnalysis(data) {
         html += `&nbsp;&nbsp;&mdash; Retail Long/Short Ratio: <strong style="color:${lsColor}">${ls.toFixed(2)}</strong> - `;
         html += ls > 2.0 ? `(Too many Longs! Whales might hunt them down.)<br>` : (ls < 0.8 ? `(Too many Shorts! Squeeze potential.)<br>` : `(Balanced)<br>`);
         
-        if (hist && (hist.totalLongRektVol > 0 || hist.totalShortRektVol > 0)) {
+        if (hist.totalLongRektVol > 0 || hist.totalShortRektVol > 0) {
             html += `<br>&nbsp;&nbsp;&#128202; <strong>24H Liquidation History:</strong><br>`;
-            html += `&nbsp;&nbsp;&nbsp;&nbsp;&mdash; $${(hist.totalLongRektVol).toLocaleString(undefined,{maximumFractionDigits:0})} Longs Rekt (Whales Absorb Longs)<br>`;
-            html += `&nbsp;&nbsp;&nbsp;&nbsp;&mdash; $${(hist.totalShortRektVol).toLocaleString(undefined,{maximumFractionDigits:0})} Shorts Rekt (Whales Absorb Shorts)<br>`;
-            html += `&nbsp;&nbsp;&nbsp;&nbsp;&mdash; 24H Funding Trend: <strong>${hist.fundingTrend}</strong><br>`;
+            html += `&nbsp;&nbsp;&nbsp;&nbsp;&mdash; <span style="color:var(--sell)">$${(hist.totalLongRektVol).toLocaleString(undefined,{maximumFractionDigits:0})} Longs Rekt (Whales Absorb Longs)</span><br>`;
+            html += `&nbsp;&nbsp;&nbsp;&nbsp;&mdash; <span style="color:var(--buy)">$${(hist.totalShortRektVol).toLocaleString(undefined,{maximumFractionDigits:0})} Shorts Rekt (Whales Absorb Shorts)</span><br>`;
         }
         
-        if (liq && (liq.long > 0 || liq.short > 0)) {
+        if (liq.long > 0 || liq.short > 0) {
             html += `<br>&nbsp;&nbsp;&#128128; <strong>Live Liquidations (Last 5m):</strong><br>`;
-            if (liq.long > 0) html += `&nbsp;&nbsp;&nbsp;&nbsp;&#128315; Longs Rekt: ${liq.long} positions ($${(liq.longVol).toLocaleString(undefined,{maximumFractionDigits:0})})<br>`;
-            if (liq.short > 0) html += `&nbsp;&nbsp;&nbsp;&nbsp;&#128314; Shorts Rekt: ${liq.short} positions ($${(liq.shortVol).toLocaleString(undefined,{maximumFractionDigits:0})})<br>`;
+            if (liq.long > 0) html += `&nbsp;&nbsp;&nbsp;&nbsp;&#128315; <span style="color:var(--sell)">Longs Rekt: ${liq.long} positions ($${(liq.longVol).toLocaleString(undefined,{maximumFractionDigits:0})})</span><br>`;
+            if (liq.short > 0) html += `&nbsp;&nbsp;&nbsp;&nbsp;&#128314; <span style="color:var(--buy)">Shorts Rekt: ${liq.short} positions ($${(liq.shortVol).toLocaleString(undefined,{maximumFractionDigits:0})})</span><br>`;
         }
     }
-    html += `<br>`;
+
+    // ==========================================
+    // 4. VERDICT
+    // ==========================================
+    html += `<br><hr style="border-color:#333; margin:15px 0;">`;
+    
+    let verdictStr = '';
+    if (trapType === 'Bear Trap' || (trend1D === 'Bullish' && cvdNet > 10)) {
+        verdictStr = `<span style="color:var(--buy)">ফেক ডাম্প (Bear Trap) চলছে! অর্ডার বুকে সেলিং প্রেসার থাকলেও স্পট মার্কেটে ওয়েলসরা বাই করছে (Positive CVD)। মার্কেট উপরে পাম্প করার সম্ভাবনা খুব বেশি। (Long Setup)</span>`;
+    } else if (trapType === 'Bull Trap' || (trend1D === 'Bearish' && cvdNet < -10)) {
+        verdictStr = `<span style="color:var(--sell)">ফেক পাম্প (Bull Trap) চলছে! অর্ডার বুকে বাইং প্রেসার থাকলেও স্পট মার্কেটে ওয়েলসরা সেল করছে (Negative CVD)। মার্কেট নিচে ডাম্প করার সম্ভাবনা খুব বেশি। (Short Setup)</span>`;
+    } else if (ls > 2.0 && trend4H === 'Bearish') {
+        verdictStr = `<span style="color:var(--sell)">রিটেইল ট্রেডাররা হিউজ লং পজিশন নিয়ে বসে আছে (Long/Short > 2.0) এবং ম্যাক্রো ট্রেন্ড বিয়ারিশ। ওয়েলসরা লং-দের লিকুইডেট করার জন্য ডাম্প করতে পারে। (High Risk)</span>`;
+    } else if (ls < 0.8 && trend4H === 'Bullish') {
+        verdictStr = `<span style="color:var(--buy)">রিটেইল ট্রেডাররা হিউজ শর্ট পজিশন নিয়ে বসে আছে (Long/Short < 0.8) এবং ম্যাক্রো ট্রেন্ড বুলিশ। শর্ট স্কুইজ (Short Squeeze) হওয়ার চান্স অনেক বেশি। (Long Setup)</span>`;
+    } else {
+        verdictStr = `<span style="color:#f59e0b">মার্কেটে বর্তমানে ক্লিয়ার কোনো ডিরেকশন নেই। ওয়েলসরা চপি মুভমেন্ট করে রিটেইলারদের স্টপ লস হান্ট করছে। স্ক্যাল্পিং ছাড়া কোনো পজিশন নেওয়া রিস্কি।</span>`;
+    }
+    
+    html += `&#128161; <strong>চূড়ান্ত সিদ্ধান্ত (Verdict):</strong> ${verdictStr}`;
+
     return html;
 }
 
@@ -1556,7 +1637,7 @@ Write your analysis in ONLY Bengali (HTML formatted).
 ### TASK:
 Give a brutal, institutional-grade market breakdown in exactly 3-4 HTML bullet points in Bengali.
 Tell the user what the whales are doing (absorbing, hunting liquidity, spoofing) based on the leverage and CVD.
-Use <strong> tags for emphasis. Do NOT use markdown code blocks like \`\`\`html.`;
+Use <strong> tags for emphasis. Do NOT use markdown code blocks like \\`\\`\\`html.`;
         
         const models = ['gemini-2.5-flash', 'gemini-2.0-flash'];
         let resultHtml = null;
@@ -1590,4 +1671,47 @@ Use <strong> tags for emphasis. Do NOT use markdown code blocks like \`\`\`html.
     }
 });
 
+app.post('/api/jarvis-chat', async (req, res) => {
+    try {
+        const { history } = req.body;
+        const apiKey = process.env.GEMINI_API_KEY;
+        if (!apiKey) return res.status(400).json({ error: "GEMINI_API_KEY environment variable is not set." });
+        
+        const internalHtml = generateInternalJarvisAnalysis(req.body);
+        const prompt = "Reply to the user in Bengali.";
+        
+        let resultHtml = null;
+        for (const model of ['gemini-2.5-flash', 'gemini-2.0-flash']) {
+            try {
+                const response = await axios.post(
+                    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+                    { contents: [{ parts: [{ text: prompt }] }] },
+                    { timeout: 5000 }
+                );
+                if (response.data && response.data.candidates) {
+                    resultHtml = response.data.candidates[0].content.parts[0].text;
+                    break;
+                }
+            } catch (err) {}
+        }
 
+        if (resultHtml) {
+            resultHtml = resultHtml.replace(/\`\`\`html/gi, '').replace(/\`\`\`/g, '').trim();
+            res.json({ success: true, text: resultHtml });
+        } else {
+            console.log("Falling back to Internal JARVIS Chat Engine...");
+            const lastMsg = history && history.length > 0 ? history[history.length - 1].parts[0].text : '';
+            const chatHtml = `<strong>[Internal AI]</strong> যেহেতু আমি লাইভ মার্কেট ডাটা পড়ছি ("${lastMsg}") এবং আপনার দেওয়া API কী কাজ করছে না, আমি শুধু বর্তমান মার্কেটের অবস্থা বলতে পারবো। রিয়ে-টাইম ডাটা অনুযায়ী নিচের পয়েন্টগুলো দেখুন:<br><br>${internalHtml}`;
+            res.json({ success: true, text: chatHtml, internal: true });
+        }
+        
+    } catch(err) {
+        console.error("JARVIS Chat Error:", err);
+        const internalHtml = generateInternalJarvisAnalysis(req.body);
+        const chatHtml = `<strong>[Internal AI]</strong> API Error! তবে আমি লাইভ ডাটা থেকে বর্তমান মার্কেট অনুযায়ী নিচের অ্যানালাইসিসটি তৈরি করেছি:<br><br>${internalHtml}`;
+        res.json({ success: true, text: chatHtml, internal: true });
+    }
+});
+
+
+app.listen(PORT, () => console.log(`[SERVER] Alpha-Flow SMC Brain v4 running on port ${PORT}`));
