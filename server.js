@@ -1338,13 +1338,30 @@ function generateInternalJarvisAnalysis(data) {
     let isSqueeze = false;
 
     // Advanced OI & Premium/Discount integration
-    if (fib50 && price > fib50 && liveOrderFlow.oiTrend === 'Decreasing' && cvdNet > 0) {
-        verdict = "মার্কেট Premium Zone-এ আছে কিন্তু Open Interest কমছে! এটি রিয়েল পাম্প নয়, বরং Short Squeeze (ফেক পাম্প)। শর্ট করার জন্য রিজেকশনের অপেক্ষা করুন।";
-        verdictColor = "#f59e0b";
+    let squeezeType = null;
+    if (fib50 && price > fib50 && liveOrderFlow.oiTrend === 'Decreasing') {
+        squeezeType = 'short_squeeze';
+    } else if (fib50 && price < fib50 && liveOrderFlow.oiTrend === 'Decreasing') {
+        squeezeType = 'long_liquidation';
+    }
+
+    if (squeezeType === 'short_squeeze') {
+        if (cvdNet < 0 || (imbalance && imbalance.askRatio > 60)) {
+            verdict = "ফেক পাম্প রিজেক্ট হয়েছে! সেলাররা স্পট মার্কেটে সেল করছে এবং সাপ্লাই ওয়াল তৈরি হয়েছে। শর্ট (Short) এন্ট্রি নেওয়ার পারফেক্ট সময়।";
+            verdictColor = "var(--sell)";
+        } else {
+            verdict = "মার্কেট Premium Zone-এ আছে কিন্তু Open Interest কমছে! এটি রিয়েল পাম্প নয়, বরং Short Squeeze (ফেক পাম্প)। শর্ট করার জন্য রিজেকশনের অপেক্ষা করুন।";
+            verdictColor = "#f59e0b";
+        }
         isSqueeze = true;
-    } else if (fib50 && price < fib50 && liveOrderFlow.oiTrend === 'Decreasing' && cvdNet < 0) {
-        verdict = "মার্কেট Discount Zone-এ আছে কিন্তু Open Interest কমছে! এটি রিয়েল ডাম্প নয়, বরং Long Liquidation (ফেক ডাম্প)। লং করার জন্য সাপোর্ট বাউন্সের অপেক্ষা করুন।";
-        verdictColor = "#f59e0b";
+    } else if (squeezeType === 'long_liquidation') {
+        if (cvdNet > 0 || (imbalance && imbalance.bidRatio > 60)) {
+            verdict = "ফেক ডাম্প রিজেক্ট হয়েছে! বায়াররা স্পট মার্কেটে বাই করছে এবং ডিমান্ড ওয়াল তৈরি হয়েছে। লং (Long) এন্ট্রি নেওয়ার পারফেক্ট সময়।";
+            verdictColor = "var(--buy)";
+        } else {
+            verdict = "মার্কেট Discount Zone-এ আছে কিন্তু Open Interest কমছে! এটি রিয়েল ডাম্প নয়, বরং Long Liquidation (ফেক ডাম্প)। লং করার জন্য সাপোর্ট বাউন্সের অপেক্ষা করুন।";
+            verdictColor = "#f59e0b";
+        }
         isSqueeze = true;
     } else if (!isSqueeze) {
         if (bullishScore > bearishScore + 1) {
