@@ -462,6 +462,77 @@
     </div>
 
 
+    <!-- ════ CoinGecko Fundamentals Section ════ -->
+    <div class="card" style="margin-bottom:20px; border-color:var(--purple);">
+        <div class="card-hdr" style="background:var(--s2); display:flex; justify-content:space-between; align-items:center;">
+            <div>
+                <span class="card-icon">📊</span>
+                <span class="card-title">Coin Fundamentals</span>
+            </div>
+            <span style="font-size:.75rem;color:var(--muted);">via CoinGecko</span>
+        </div>
+        <div class="card-body" style="padding:16px;">
+
+            <!-- Coin Banner -->
+            <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px;padding:14px;background:var(--bg);border:1px solid var(--border);border-radius:10px;">
+                <img id="fundCoinImg" style="width:48px;height:48px;border-radius:50%;display:none;" src="" alt="">
+                <div style="flex:1;">
+                    <div style="display:flex;align-items:center;gap:10px;">
+                        <span id="fundCoinName" style="font-size:1rem;font-weight:700;">-</span>
+                        <span id="fundPrice" style="font-family:var(--mono);font-size:1rem;font-weight:600;color:var(--buy);">-</span>
+                        <span id="fundChange24h" style="font-size:.82rem;font-weight:600;">-</span>
+                    </div>
+                    <div id="fundCoinDesc" style="font-size:.78rem;color:var(--muted);margin-top:4px;line-height:1.5;"></div>
+                </div>
+            </div>
+
+            <!-- Stats Grid -->
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+
+                <!-- Market Card -->
+                <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px;">
+                    <div style="font-size:.72rem;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;font-weight:600;margin-bottom:10px;">📈 Market Data</div>
+                    <div id="fundMarketCard" style="display:flex;flex-direction:column;gap:6px;">
+                        <div class="sk"></div><div class="sk"></div>
+                    </div>
+                </div>
+
+                <!-- Supply Card -->
+                <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px;">
+                    <div style="font-size:.72rem;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;font-weight:600;margin-bottom:10px;">🔢 Supply Info</div>
+                    <div id="fundSupplyCard" style="display:flex;flex-direction:column;gap:6px;">
+                        <div class="sk"></div><div class="sk"></div>
+                    </div>
+                </div>
+
+                <!-- Social Card -->
+                <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px;">
+                    <div style="font-size:.72rem;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;font-weight:600;margin-bottom:10px;">🌐 Social Signals</div>
+                    <div id="fundSocialCard" style="display:flex;flex-direction:column;gap:6px;">
+                        <div class="sk"></div><div class="sk"></div>
+                    </div>
+                </div>
+
+                <!-- Dev Card -->
+                <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px;">
+                    <div style="font-size:.72rem;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;font-weight:600;margin-bottom:10px;">⚙️ Dev Activity</div>
+                    <div id="fundDevCard" style="display:flex;flex-direction:column;gap:6px;">
+                        <div class="sk"></div><div class="sk"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Wallet/On-chain Card (full width) -->
+            <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px;margin-top:14px;">
+                <div style="font-size:.72rem;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;font-weight:600;margin-bottom:10px;">🔗 On-Chain Explorers</div>
+                <div id="fundWalletCard" style="display:flex;flex-direction:column;gap:6px;">
+                    <div class="sk"></div><div class="sk"></div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
 
 </div>
 
