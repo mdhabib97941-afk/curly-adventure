@@ -1627,6 +1627,22 @@ function generateInternalJarvisAnalysis(data) {
 
     if (ls > 0) {
         html += '<br><hr style="border-color:#333; margin:15px 0;">';
+    
+    // --- Volume Profile Context ---
+    const curPrice = liveOrderFlow.currentPrice;
+    if (liveOrderFlow.vpPOC && curPrice) {
+        const dist = Math.abs(curPrice - liveOrderFlow.vpPOC) / curPrice * 100;
+        if (dist > 0.1) {
+            if (curPrice < liveOrderFlow.vpPOC) {
+                html += `&#9888; <strong>Overhead Resistance (nPOC):</strong> Price is below $${liveOrderFlow.vpPOC.toLocaleString(undefined,{maximumFractionDigits:0})} (POC). This is a strong resistance! Avoid Blind Longs and look for short setups.<br><br>`;
+            } else {
+                html += `&#128302; <strong>Floor Support (nPOC):</strong> Price is above $${liveOrderFlow.vpPOC.toLocaleString(undefined,{maximumFractionDigits:0})} (POC). This is a strong support floor! Look for long setups.<br><br>`;
+            }
+        } else {
+            html += `&#127919; <strong>POC Zone:</strong> Price is exactly inside the Fair Value $${liveOrderFlow.vpPOC.toLocaleString(undefined,{maximumFractionDigits:0})} (POC)! Wait for a clear breakout or breakdown.<br><br>`;
+        }
+    }
+
         html += '<strong>&#127976; Hedge Fund Desk (Leverage & Liquidations):</strong><br>';
 
         let frColor = fr > 0.0001 ? 'var(--sell)' : (fr < -0.0001 ? 'var(--buy)' : '#fff');
@@ -1705,6 +1721,22 @@ function generateInternalJarvisAnalysis(data) {
     const curPrice = liveOrderFlow.currentPrice || 0;
     if (topZones.length > 0) {
         html += '<br><hr style="border-color:#333; margin:15px 0;">';
+    
+    // --- Volume Profile Context ---
+    const curPrice = liveOrderFlow.currentPrice;
+    if (liveOrderFlow.vpPOC && curPrice) {
+        const dist = Math.abs(curPrice - liveOrderFlow.vpPOC) / curPrice * 100;
+        if (dist > 0.1) {
+            if (curPrice < liveOrderFlow.vpPOC) {
+                html += `&#9888; <strong>Overhead Resistance (nPOC):</strong> Price is below $${liveOrderFlow.vpPOC.toLocaleString(undefined,{maximumFractionDigits:0})} (POC). This is a strong resistance! Avoid Blind Longs and look for short setups.<br><br>`;
+            } else {
+                html += `&#128302; <strong>Floor Support (nPOC):</strong> Price is above $${liveOrderFlow.vpPOC.toLocaleString(undefined,{maximumFractionDigits:0})} (POC). This is a strong support floor! Look for long setups.<br><br>`;
+            }
+        } else {
+            html += `&#127919; <strong>POC Zone:</strong> Price is exactly inside the Fair Value $${liveOrderFlow.vpPOC.toLocaleString(undefined,{maximumFractionDigits:0})} (POC)! Wait for a clear breakout or breakdown.<br><br>`;
+        }
+    }
+
         html += '<strong>&#127919; Institutional Liquidity Hunt Map (24H):</strong><br>';
         html += '<small style="color:#888;">ওয়েলসরা যে প্রাইস জোনগুলোতে সবচেয়ে বেশি লিকুইডেশন করেছে:</small><br><br>';
 
@@ -1721,6 +1753,22 @@ function generateInternalJarvisAnalysis(data) {
 
     // ===== 4. VERDICT =====
     html += '<br><hr style="border-color:#333; margin:15px 0;">';
+    
+    // --- Volume Profile Context ---
+    const curPrice = liveOrderFlow.currentPrice;
+    if (liveOrderFlow.vpPOC && curPrice) {
+        const dist = Math.abs(curPrice - liveOrderFlow.vpPOC) / curPrice * 100;
+        if (dist > 0.1) {
+            if (curPrice < liveOrderFlow.vpPOC) {
+                html += `&#9888; <strong>Overhead Resistance (nPOC):</strong> Price is below $${liveOrderFlow.vpPOC.toLocaleString(undefined,{maximumFractionDigits:0})} (POC). This is a strong resistance! Avoid Blind Longs and look for short setups.<br><br>`;
+            } else {
+                html += `&#128302; <strong>Floor Support (nPOC):</strong> Price is above $${liveOrderFlow.vpPOC.toLocaleString(undefined,{maximumFractionDigits:0})} (POC). This is a strong support floor! Look for long setups.<br><br>`;
+            }
+        } else {
+            html += `&#127919; <strong>POC Zone:</strong> Price is exactly inside the Fair Value $${liveOrderFlow.vpPOC.toLocaleString(undefined,{maximumFractionDigits:0})} (POC)! Wait for a clear breakout or breakdown.<br><br>`;
+        }
+    }
+
     let verdictStr = '';
     if (trapType === 'Bear Trap' || (is1DBull && cvdNet > 10)) {
         if (typeof spoofIntent !== 'undefined' && spoofIntent === 'Distribution') {
