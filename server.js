@@ -75,6 +75,18 @@ const OrderbookSnapshotSchema = new mongoose.Schema({
 });
 const OrderbookSnapshot = mongoose.model('OrderbookSnapshot', OrderbookSnapshotSchema);
 
+
+const HedgeFundDataSchema = new mongoose.Schema({
+    timestamp: { type: Date, default: Date.now, expires: 172800 }, // Auto-delete after 48 hours
+    fundingRate: Number,
+    longShortRatio: Number,
+    liquidationsLongCount: Number,
+    liquidationsShortCount: Number,
+    liquidationsLongVol: Number,
+    liquidationsShortVol: Number
+});
+const HedgeFundData = mongoose.model('HedgeFundData', HedgeFundDataSchema);
+
 const db = new sqlite3.Database(path.join(__dirname, 'database.sqlite'));
 db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS candles (
@@ -1097,6 +1109,16 @@ app.get('/api/brain/insights', (req, res) => {
 
 // ─── LIVE ORDER FLOW & RETAIL TRAP TRACKING (WebSockets) ────────────────────
 let liveOrderFlow = {
+    fundingRate: 0,
+    longShortRatio: 0,
+    recentLiquidations: { long: 0, short: 0, longVol: 0, shortVol: 0 },
+
+    history24H: {
+        totalLongRektVol: 0,
+        totalShortRektVol: 0,
+        fundingTrend: 'Neutral'
+    },
+
     whaleWallBid: null, // { price, qty }
     whaleWallAsk: null, // { price, qty }
     cvd: 0,
@@ -1163,6 +1185,70 @@ async function fetchMacroData(symbol) {
     }
 }
 
+
+async function fetchHedgeFundData(symbol) {
+    try {
+        let fr = 0;
+        let ls = 0;
+
+        const frRes = await axios.get(`https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${symbol}`, {timeout:5000});
+        if (frRes.data) {
+            fr = parseFloat(frRes.data.lastFundingRate);
+            liveOrderFlow.fundingRate = fr;
+        }
+
+        const lsRes = await axios.get(`https://fapi.binance.com/futures/data/globalLongShortAccountRatio?symbol=${symbol}&period=5m`, {timeout:5000});
+        if (lsRes.data && lsRes.data.length > 0) {
+            ls = parseFloat(lsRes.data[0].longShortRatio);
+            liveOrderFlow.longShortRatio = ls;
+        }
+
+        // Save current 5m snapshot to MongoDB
+        const snapshot = new HedgeFundData({
+            fundingRate: fr,
+            longShortRatio: ls,
+            liquidationsLongCount: liveOrderFlow.recentLiquidations.long,
+            liquidationsShortCount: liveOrderFlow.recentLiquidations.short,
+            liquidationsLongVol: liveOrderFlow.recentLiquidations.longVol,
+            liquidationsShortVol: liveOrderFlow.recentLiquidations.shortVol
+        });
+        await snapshot.save();
+
+        // Analyze last 24 Hours from MongoDB
+        const time24hAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        const data24h = await HedgeFundData.find({ timestamp: { $gte: time24hAgo } }).sort({timestamp: 1});
+        
+        let totalLongRekt = 0;
+        let totalShortRekt = 0;
+        
+        if (data24h && data24h.length > 0) {
+            data24h.forEach(doc => {
+                totalLongRekt += doc.liquidationsLongVol || 0;
+                totalShortRekt += doc.liquidationsShortVol || 0;
+            });
+            
+            liveOrderFlow.history24H.totalLongRektVol = totalLongRekt;
+            liveOrderFlow.history24H.totalShortRektVol = totalShortRekt;
+            
+            const firstFr = data24h[0].fundingRate || 0;
+            const lastFr = fr;
+            if (lastFr > firstFr + 0.00005) liveOrderFlow.history24H.fundingTrend = 'Increasing';
+            else if (lastFr < firstFr - 0.00005) liveOrderFlow.history24H.fundingTrend = 'Decreasing';
+            else liveOrderFlow.history24H.fundingTrend = 'Neutral';
+        }
+        
+        // Reset 5m counters after saving
+        liveOrderFlow.recentLiquidations = { long: 0, short: 0, longVol: 0, shortVol: 0 };
+        
+    } catch(err) {
+        console.error("Hedge Fund data fetch/db error:", err.message);
+    }
+}
+// Run every 5 mins
+setInterval(() => fetchHedgeFundData('BTCUSDT'), 5 * 60 * 1000);
+fetchHedgeFundData('BTCUSDT');
+
+
 setInterval(() => fetchMacroData('BTCUSDT'), 5 * 60 * 1000);
 setTimeout(() => fetchMacroData('BTCUSDT'), 2000);
 
@@ -1175,6 +1261,41 @@ let lastTradeId = 0;
 
 
 const WS_BASE = 'wss://stream.binance.com:9443/ws';
+let wsForce = null;
+function connectForceOrderWS(symbol) {
+    let streamSymbol = symbol.toLowerCase();
+    if (wsForce) { try { wsForce.close(); } catch(e) {} }
+    wsForce = new WebSocket(`wss://fstream.binance.com/ws/${streamSymbol}@forceOrder`);
+    
+    wsForce.on('open', () => console.log(`[WS] HedgeFund ForceOrder connected for ${symbol}`));
+    
+    wsForce.on('message', (data) => {
+        try {
+            const parsed = JSON.parse(data);
+            if (parsed.e === 'forceOrder') {
+                const order = parsed.o;
+                const side = order.S; // "BUY" means short got liquidated. "SELL" means long got liquidated.
+                const price = parseFloat(order.p);
+                const qty = parseFloat(order.q);
+                const vol = price * qty;
+                
+                if (side === 'SELL') { // Long Liquidated
+                    liveOrderFlow.recentLiquidations.long++;
+                    liveOrderFlow.recentLiquidations.longVol += vol;
+                } else if (side === 'BUY') { // Short Liquidated
+                    liveOrderFlow.recentLiquidations.short++;
+                    liveOrderFlow.recentLiquidations.shortVol += vol;
+                }
+            }
+        } catch(e) {}
+    });
+    
+    wsForce.on('close', () => setTimeout(() => connectForceOrderWS(symbol), 5000));
+    wsForce.on('error', () => {});
+}
+
+
+
 let wsDepth = null;
 let wsTrade = null;
 
@@ -1320,7 +1441,40 @@ async function fetchOpenInterest() {
     try {
         const response = await axios.get(`https://fapi.binance.com/fapi/v1/openInterest?symbol=BTCUSDT`, { timeout: 3000 });
         const oi = parseFloat(response.data.openInterest);
-        if (liveOrderFlow.openInterest) {
+            // Hedge Fund Logic (Liquidation & Leverage)
+    let fr = liveOrderFlow.fundingRate;
+    let ls = liveOrderFlow.longShortRatio;
+    let liq = liveOrderFlow.recentLiquidations;
+    
+    if (ls > 0) {
+        html += `<br><strong>&#127976; Hedge Fund Desk (Leverage & Liquidations):</strong><br>`;
+        
+        let frColor = fr > 0.0001 ? "var(--sell)" : (fr < -0.0001 ? "var(--buy)" : "#fff");
+        let frType = fr > 0.0001 ? "Extreme Long Leverage (Risk of Long Squeeze)" : (fr < -0.0001 ? "Extreme Short Leverage (Risk of Short Squeeze)" : "Neutral Funding");
+        html += `Funding Rate: <strong style="color:${frColor}">${(fr*100).toFixed(4)}%</strong> &mdash; ${frType}<br>`;
+        
+        let lsColor = ls > 2.0 ? "var(--sell)" : (ls < 0.8 ? "var(--buy)" : "#fff");
+        html += `Retail Long/Short Ratio: <strong style="color:${lsColor}">${ls.toFixed(2)}</strong> &mdash; `;
+        html += ls > 2.0 ? `(Too many Longs! Whales might hunt them down.)<br>` : (ls < 0.8 ? `(Too many Shorts! Squeeze potential.)<br>` : `(Balanced)<br>`);
+        
+        
+        let hist = liveOrderFlow.history24H;
+        if (hist.totalLongRektVol > 0 || hist.totalShortRektVol > 0) {
+            html += `&#128202; <strong>24H Liquidation History:</strong><br>`;
+            html += `&nbsp;&nbsp;&mdash; $${(hist.totalLongRektVol).toLocaleString(undefined,{maximumFractionDigits:0})} Longs Rekt (Whales Absorb Longs)<br>`;
+            html += `&nbsp;&nbsp;&mdash; $${(hist.totalShortRektVol).toLocaleString(undefined,{maximumFractionDigits:0})} Shorts Rekt (Whales Absorb Shorts)<br>`;
+            html += `&nbsp;&nbsp;&mdash; 24H Funding Trend: <strong>${hist.fundingTrend}</strong><br><br>`;
+        }
+        
+        if (liq.long > 0 || liq.short > 0) {
+            html += `&#128128; <strong>Live Liquidations (Last 5m):</strong><br>`;
+            if (liq.long > 0) html += `&nbsp;&nbsp;&#128315; Longs Rekt: ${liq.long} positions ($${(liq.longVol).toLocaleString(undefined,{maximumFractionDigits:0})})<br>`;
+            if (liq.short > 0) html += `&nbsp;&nbsp;&#128314; Shorts Rekt: ${liq.short} positions ($${(liq.shortVol).toLocaleString(undefined,{maximumFractionDigits:0})})<br>`;
+        }
+        html += `<br>`;
+    }
+    
+if (liveOrderFlow.openInterest) {
             if (oi > liveOrderFlow.openInterest) liveOrderFlow.oiTrend = 'Increasing';
             else if (oi < liveOrderFlow.openInterest) liveOrderFlow.oiTrend = 'Decreasing';
         }
