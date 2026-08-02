@@ -62,21 +62,23 @@ mongoose.connect(mongoURI, { useNewUrlParser: true, useUnifiedTopology: true })
     .catch(err => console.error('[MONGODB] Connection error:', err));
 // HedgeFundData Schema (48h TTL auto-delete)
 const hedgeFundSchema = new mongoose.Schema({
-    timestamp: { type: Date, default: Date.now, index: { expireAfterSeconds: 172800 } },
+    timestamp: { type: Date, default: Date.now, index: { expireAfterSeconds: 302400 } },
     fundingRate: Number,
     longShortRatio: Number,
     liquidationsLongCount: Number,
     liquidationsShortCount: Number,
     liquidationsLongVol: Number,
     liquidationsShortVol: Number,
-    liquidationsByPrice: { type: Map, of: Object, default: {} }
+    liquidationsByPrice: { type: Map, of: Object, default: {} },
+    buySpoofCount: { type: Number, default: 0 },
+    sellSpoofCount: { type: Number, default: 0 }
 });
 const HedgeFundData = mongoose.model('HedgeFundData', hedgeFundSchema);
-console.log("[DB] HedgeFundData schema ready (48h TTL).");
+console.log("[DB] HedgeFundData schema ready (84h TTL).");
 
 
 const BtcDeepLiquiditySchema = new mongoose.Schema({
-    timestamp: { type: Date, default: Date.now },
+    timestamp: { type: Date, default: Date.now, index: { expireAfterSeconds: 172800 } }, // 48h TTL
     bid_vol_1: Number, ask_vol_1: Number,
     bid_vol_2: Number, ask_vol_2: Number,
     bid_vol_5: Number, ask_vol_5: Number
@@ -1129,7 +1131,9 @@ let liveOrderFlow = {
     fundingRate: 0,
     longShortRatio: 0,
     recentLiquidations: { long: 0, short: 0, longVol: 0, shortVol: 0 },
-    history24H: { totalLongRektVol: 0, totalShortRektVol: 0, fundingTrend: "Neutral" },
+    recentSpoofs: { buy: 0, sell: 0 },
+    orderAuthenticity: null, // Holds 24h Real vs Spoofed stats
+    history24H: { totalLongRektVol: 0, totalShortRektVol: 0, fundingTrend: "Neutral", totalBuySpoofs: 0, totalSellSpoofs: 0 },
     // Macro (readable names for internal analysis)
     macroData: null,
     // Liquidation Heatmap (price -> {longVol, shortVol})
@@ -1239,9 +1243,13 @@ function connectDepthStream(symbol) {
             // Spoofing detection logic
             if (lastWhaleWallBid && !liveOrderFlow.whaleWallBid) {
                 liveOrderFlow.spoofAlert = `Buy Wall at $${lastWhaleWallBid.price} PULLED! (Spoofing Detected)`;
+                if(!liveOrderFlow.recentSpoofs) liveOrderFlow.recentSpoofs = { buy: 0, sell: 0 };
+                liveOrderFlow.recentSpoofs.buy += 1;
             }
             if (lastWhaleWallAsk && !liveOrderFlow.whaleWallAsk) {
                 liveOrderFlow.spoofAlert = `Sell Wall at $${lastWhaleWallAsk.price} PULLED! (Spoofing Detected)`;
+                if(!liveOrderFlow.recentSpoofs) liveOrderFlow.recentSpoofs = { buy: 0, sell: 0 };
+                liveOrderFlow.recentSpoofs.sell += 1;
             }
             lastWhaleWallBid = liveOrderFlow.whaleWallBid;
             lastWhaleWallAsk = liveOrderFlow.whaleWallAsk;
@@ -1421,7 +1429,9 @@ async function fetchHedgeFundData(symbol) {
                 liquidationsShortCount: liveOrderFlow.recentLiquidations.short,
                 liquidationsLongVol: liveOrderFlow.recentLiquidations.longVol,
                 liquidationsShortVol: liveOrderFlow.recentLiquidations.shortVol,
-                liquidationsByPrice: liveOrderFlow.liquidationsByPrice
+                liquidationsByPrice: liveOrderFlow.liquidationsByPrice,
+                buySpoofCount: (liveOrderFlow.recentSpoofs || {buy:0}).buy,
+                sellSpoofCount: (liveOrderFlow.recentSpoofs || {sell:0}).sell
             });
             await snapshot.save();
 
@@ -1431,11 +1441,14 @@ async function fetchHedgeFundData(symbol) {
 
             if (data24h && data24h.length > 0) {
                 let totalLongRekt = 0, totalShortRekt = 0;
+                let totalBuySpoof = 0, totalSellSpoof = 0;
                 // Aggregate liquidation heatmap from all 24h snapshots
                 const priceAgg = {};
                 data24h.forEach(doc => {
                     totalLongRekt += doc.liquidationsLongVol || 0;
                     totalShortRekt += doc.liquidationsShortVol || 0;
+                    totalBuySpoof += doc.buySpoofCount || 0;
+                    totalSellSpoof += doc.sellSpoofCount || 0;
                     if (doc.liquidationsByPrice) {
                         doc.liquidationsByPrice.forEach((val, key) => {
                             if (!priceAgg[key]) priceAgg[key] = { longVol: 0, shortVol: 0 };
@@ -1446,6 +1459,8 @@ async function fetchHedgeFundData(symbol) {
                 });
                 liveOrderFlow.history24H.totalLongRektVol = totalLongRekt;
                 liveOrderFlow.history24H.totalShortRektVol = totalShortRekt;
+                liveOrderFlow.history24H.totalBuySpoofs = totalBuySpoof;
+                liveOrderFlow.history24H.totalSellSpoofs = totalSellSpoof;
 
                 // Find top 3 institutional target zones (most liquidation volume)
                 const sortedZones = Object.entries(priceAgg)
@@ -1466,12 +1481,45 @@ async function fetchHedgeFundData(symbol) {
 
         // Reset 5m counters (keep price heatmap for accumulation)
         liveOrderFlow.recentLiquidations = { long: 0, short: 0, longVol: 0, shortVol: 0 };
+        liveOrderFlow.recentSpoofs = { buy: 0, sell: 0 };
 
     } catch(err) {
         console.error('[HedgeFund] Fetch error:', err.message);
     }
 }
 setInterval(() => fetchHedgeFundData('BTCUSDT'), 5 * 60 * 1000);
+
+// =====================================================================
+// ORDER AUTHENTICITY WORKER (For Jarvis Analysis)
+// =====================================================================
+async function updateAuthenticityStats() {
+    try {
+        const last1440 = await BtcDeepLiquidity.find().sort({ _id: -1 }).limit(1440).lean();
+        if (last1440 && last1440.length > 0) {
+            let sumBids = 0, sumAsks = 0, maxBids = 0, maxAsks = 0;
+            last1440.forEach(r => {
+                const bids = (r.bid_vol_1||0) + (r.bid_vol_2||0) + (r.bid_vol_5||0);
+                const asks = (r.ask_vol_1||0) + (r.ask_vol_2||0) + (r.ask_vol_5||0);
+                sumBids += bids;
+                sumAsks += asks;
+                if(bids > maxBids) maxBids = bids;
+                if(asks > maxAsks) maxAsks = asks;
+            });
+            const avgBids = sumBids / last1440.length;
+            const avgAsks = sumAsks / last1440.length;
+            
+            liveOrderFlow.orderAuthenticity = {
+                totalBids: maxBids, realBids: avgBids, fakeBids: maxBids - avgBids,
+                totalAsks: maxAsks, realAsks: avgAsks, fakeAsks: maxAsks - avgAsks
+            };
+        }
+    } catch (e) {
+        console.error("Authenticity update error:", e.message);
+    }
+}
+setInterval(updateAuthenticityStats, 60 * 1000);
+setTimeout(updateAuthenticityStats, 5000);
+
 fetchHedgeFundData('BTCUSDT');
 
 
@@ -1590,6 +1638,25 @@ function generateInternalJarvisAnalysis(data) {
             html += '<br>&nbsp;&nbsp;&#128128; <strong>Live Liquidations (Last 5m):</strong><br>';
             if (liq.long > 0) html += '&nbsp;&nbsp;&nbsp;&nbsp;&#128315; <span style="color:var(--sell)">Longs Rekt: ' + liq.long + ' positions ($' + (liq.longVol).toLocaleString(undefined,{maximumFractionDigits:0}) + ')</span><br>';
             if (liq.short > 0) html += '&nbsp;&nbsp;&nbsp;&nbsp;&#128314; <span style="color:var(--buy)">Shorts Rekt: ' + liq.short + ' positions ($' + (liq.shortVol).toLocaleString(undefined,{maximumFractionDigits:0}) + ')</span><br>';
+        }
+        
+        // --- 24H Order Authenticity (Real vs Spoofed) ---
+        let auth = liveOrderFlow.orderAuthenticity;
+        if (auth && (auth.totalBids > 0 || auth.totalAsks > 0)) {
+            let buyFakePct = ((auth.fakeBids / auth.totalBids) * 100).toFixed(1);
+            let sellFakePct = ((auth.fakeAsks / auth.totalAsks) * 100).toFixed(1);
+            
+            html += '<br>&nbsp;&nbsp;&#128680; <strong>Order Authenticity (Real vs Spoofed - 24H):</strong><br>';
+            html += '&nbsp;&nbsp;&nbsp;&nbsp;&mdash; <span style="color:var(--buy)">Buy Walls (Bids): <strong>' + buyFakePct + '% Fake (Spoofed)</strong></span> - ($' + (auth.fakeBids/1000000).toFixed(2) + 'M Fake / $' + (auth.totalBids/1000000).toFixed(2) + 'M Total)<br>';
+            html += '&nbsp;&nbsp;&nbsp;&nbsp;&mdash; <span style="color:var(--sell)">Sell Walls (Asks): <strong>' + sellFakePct + '% Fake (Spoofed)</strong></span> - ($' + (auth.fakeAsks/1000000).toFixed(2) + 'M Fake / $' + (auth.totalAsks/1000000).toFixed(2) + 'M Total)<br>';
+            
+            if (parseFloat(sellFakePct) > parseFloat(buyFakePct) * 1.5 && parseFloat(sellFakePct) > 5) {
+                html += '&nbsp;&nbsp;&nbsp;&nbsp;&mdash; <span style="color:var(--buy)"><strong>Intent Analysis:</strong> ওয়েলসরা বারবার উপরে ফেক সেলিং দেওয়াল তৈরি করে মার্কেটকে ভয় দেখাচ্ছে (Accumulation by Spoofing)। নিচের দিকে ডাম্পিং ফেক হতে পারে।</span><br>';
+            } else if (parseFloat(buyFakePct) > parseFloat(sellFakePct) * 1.5 && parseFloat(buyFakePct) > 5) {
+                html += '&nbsp;&nbsp;&nbsp;&nbsp;&mdash; <span style="color:var(--sell)"><strong>Intent Analysis:</strong> ওয়েলসরা বারবার নিচে ফেক বায়িং দেওয়াল দিয়ে মার্কেটকে উপরে পাম্প করাচ্ছে (Distribution by Spoofing)। উপরের দিকের ব্রেকআউট ফেক হতে পারে।</span><br>';
+            } else {
+                html += '&nbsp;&nbsp;&nbsp;&nbsp;&mdash; <span style="color:#f59e0b"><strong>Intent Analysis:</strong> মার্কেটে স্পুফিং ব্যালেন্সড। বড় কোনো Manipulation দেখা যাচ্ছে না।</span><br>';
+            }
         }
     }
 
