@@ -1,35 +1,3 @@
-\n
-    // Hedge Fund Logic (Liquidation & Leverage)
-    let fr = liveOrderFlow.fundingRate;
-    let ls = liveOrderFlow.longShortRatio;
-    let liq = liveOrderFlow.recentLiquidations;
-    let hist = liveOrderFlow.history24H;
-    
-    if (ls > 0) {
-        html += `<br><strong>&#127976; Hedge Fund Desk (Leverage & Liquidations):</strong><br>`;
-        
-        let frColor = fr > 0.0001 ? "var(--sell)" : (fr < -0.0001 ? "var(--buy)" : "#fff");
-        let frType = fr > 0.0001 ? "Extreme Long Leverage (Risk of Long Squeeze)" : (fr < -0.0001 ? "Extreme Short Leverage (Risk of Short Squeeze)" : "Neutral Funding");
-        html += `Funding Rate: <strong style="color:${frColor}">${(fr*100).toFixed(4)}%</strong> &mdash; ${frType}<br>`;
-        
-        let lsColor = ls > 2.0 ? "var(--sell)" : (ls < 0.8 ? "var(--buy)" : "#fff");
-        html += `Retail Long/Short Ratio: <strong style="color:${lsColor}">${ls.toFixed(2)}</strong> &mdash; `;
-        html += ls > 2.0 ? `(Too many Longs! Whales might hunt them down.)<br>` : (ls < 0.8 ? `(Too many Shorts! Squeeze potential.)<br>` : `(Balanced)<br>`);
-        
-        if (hist.totalLongRektVol > 0 || hist.totalShortRektVol > 0) {
-            html += `&#128202; <strong>24H Liquidation History:</strong><br>`;
-            html += `&nbsp;&nbsp;&mdash; $${(hist.totalLongRektVol).toLocaleString(undefined,{maximumFractionDigits:0})} Longs Rekt (Whales Absorb Longs)<br>`;
-            html += `&nbsp;&nbsp;&mdash; $${(hist.totalShortRektVol).toLocaleString(undefined,{maximumFractionDigits:0})} Shorts Rekt (Whales Absorb Shorts)<br>`;
-            html += `&nbsp;&nbsp;&mdash; 24H Funding Trend: <strong>${hist.fundingTrend}</strong><br><br>`;
-        }
-        
-        if (liq.long > 0 || liq.short > 0) {
-            html += `&#128128; <strong>Live Liquidations (Last 5m):</strong><br>`;
-            if (liq.long > 0) html += `&nbsp;&nbsp;&#128315; Longs Rekt: ${liq.long} positions ($${(liq.longVol).toLocaleString(undefined,{maximumFractionDigits:0})})<br>`;
-            if (liq.short > 0) html += `&nbsp;&nbsp;&#128314; Shorts Rekt: ${liq.short} positions ($${(liq.shortVol).toLocaleString(undefined,{maximumFractionDigits:0})})<br>`;
-        }
-        html += `<br>`;
-    }
 import express from 'express';
 import cors from 'cors';
 import axios from 'axios';
