@@ -1444,18 +1444,180 @@ async function fetchOpenInterest() {
         if (liveOrderFlow.openInterest) {
             if (oi > liveOrderFlow.openInterest) liveOrderFlow.oiTrend = 'Increasing';
             else if (oi < liveOrderFlow.openInterest) liveOrderFlow.oiTrend = 'Decreasing';
-            else liveOrderFlow.oiTrend = 'Stable';
         }
         liveOrderFlow.openInterest = oi;
-    
-} catch (err) {
-        // console.error("OI error");
+    } catch(err) {
+        console.error('Error fetching OI:', err.message);
     }
 }
 setInterval(fetchOpenInterest, 30000);
 fetchOpenInterest();
 
+// --- Internal JARVIS AI Engine ---
+function generateInternalJarvisAnalysis(data) {
+    const price    = liveOrderFlow.currentPrice || data.currentPrice;
+    const cvdNet   = liveOrderFlow.cvd || (data.cvdData ? data.cvdData.netCvd : 0);
+    const wsBid    = liveOrderFlow.whaleWallBid;
+    const wsAsk    = liveOrderFlow.whaleWallAsk;
+    const wsTrap   = liveOrderFlow.trapAlert;
+    const wsSpoof  = liveOrderFlow.spoofAlert;
+    const wsSLZone = liveOrderFlow.stopLossZone;
+    const { swingHighs, swingLows, volatility, imbalance } = data;
+    const support    = swingLows  && swingLows.length  > 0 ? swingLows[swingLows.length-1].price.toFixed(2)  : 'N/A';
+    const resistance = swingHighs && swingHighs.length > 0 ? swingHighs[swingHighs.length-1].price.toFixed(2) : 'N/A';
 
+    const fib50 = (support !== 'N/A' && resistance !== 'N/A') ? (parseFloat(resistance) + parseFloat(support)) / 2 : null;
+    let pdZone = '';
+    if (fib50 && price) {
+        if (price > fib50) pdZone = `<span style="color:var(--sell)">Premium Zone (High Risk to Buy)</span>`;
+        else pdZone = `<span style="color:var(--buy)">Discount Zone (High Risk to Sell)</span>`;
+    }
+
+    let html = `<strong>[Internal AI]</strong> ${new Date().toLocaleTimeString()} &mdash; লাইভ মার্কেট অ্যানালাইসিস:<br>`;
+    html += `&#128336; <strong>Session:</strong> ${getKillzone()}<br><br>`;
+    if (price) html += `Price: <strong>$${parseFloat(price).toLocaleString()}</strong> | Zone: ${pdZone}<br>`;
+    if (liveOrderFlow.openInterest) {
+        let oiColor = liveOrderFlow.oiTrend === 'Increasing' ? 'var(--buy)' : (liveOrderFlow.oiTrend === 'Decreasing' ? 'var(--sell)' : '#fff');
+        html += `Open Interest: <strong>${liveOrderFlow.openInterest.toLocaleString()}</strong> (<span style="color:${oiColor}">${liveOrderFlow.oiTrend}</span>)<br>`;
+    }
+
+    // Volatility
+    if (volatility && volatility.stdDevPct <= 0.15) {
+        html += `<span style="color:#f59e0b">&#9889; Squeeze (${volatility.stdDevPct.toFixed(2)}%) &mdash; বড় Spike হতে পারে!</span><br>`;
+    } else if (volatility && volatility.stdDevPct > 0.40) {
+        html += `<strong>&#128293; High Volatility (${volatility.stdDevPct.toFixed(2)}%)</strong> &mdash; মার্কেটে বড় ধরনের মুভ চলছে<br>`;
+    } else if (volatility) {
+        html += `Volatility স্বাভাবিক আছে (${volatility.stdDevPct.toFixed(2)}%).<br>`;
+    }
+
+    // Whale Walls from WebSocket
+    if (wsBid) html += `&#128011; <span style="color:var(--buy)">Whale Buy Wall: $${wsBid.price.toFixed(2)} (${wsBid.qty.toFixed(2)} BTC) &mdash; নিচে বড় সাপোর্ট আছে</span><br>`;
+    if (wsAsk) html += `&#128011; <span style="color:var(--sell)">Whale Sell Wall: $${wsAsk.price.toFixed(2)} (${wsAsk.qty.toFixed(2)} BTC) &mdash; উপরে বড় রেসিস্টেন্স আছে</span><br>`;
+    if (wsSpoof) html += `&#128680; <span style="color:var(--sell)">${wsSpoof}</span><br>`;
+
+    // Order Book Imbalance
+    let isBullishBias = false;
+    if (imbalance) {
+        if (imbalance.bidRatio > 65) {
+            html += `Order Book: <span style="color:var(--buy)">Extreme Buy Pressure (${imbalance.bidRatio.toFixed(1)}%) &mdash; বায়াররা স্ট্রং পজিশনে আছে</span><br>`;
+            isBullishBias = true;
+        } else if (imbalance.askRatio > 65) {
+            html += `Order Book: <span style="color:var(--sell)">Extreme Sell Pressure (${imbalance.askRatio.toFixed(1)}%) &mdash; সেলাররা স্ট্রং পজিশনে আছে</span><br>`;
+        } else {
+            html += `Order Book: নিউট্রাল বা স্বাভাবিক অবস্থায় আছে<br>`;
+        }
+    }
+
+    // CVD from WebSocket
+    if (cvdNet > 10) {
+        html += `CVD: <span style="color:var(--buy)">+${cvdNet.toFixed(2)} BTC bought</span> &mdash; স্পট মার্কেটে প্রচুর অ্যাগ্রেসিভ বাইং হচ্ছে।<br>`;
+    } else if (cvdNet < -10) {
+        html += `CVD: <span style="color:var(--sell)">${cvdNet.toFixed(2)} BTC sold</span> &mdash; স্পট মার্কেটে প্রচুর অ্যাগ্রেসিভ সেলিং হচ্ছে।<br>`;
+    } else {
+        html += `CVD: নিউট্রাল বা স্বাভাবিক।<br>`;
+    }
+
+    // Trap Probability
+    let trapProb = 20, trapType = 'None';
+    if (isBullishBias && cvdNet < -5) {
+        trapProb = 85; trapType = 'FAKE PUMP (Bull Trap)';
+        html += `<br>&#9888;&#65039; Buy Pressure + Negative CVD = <span style="color:var(--sell)">${trapType}</span>. Trap Probability: <strong>${trapProb}%</strong><br>`;
+    } else if (!isBullishBias && cvdNet > 5) {
+        trapProb = 85; trapType = 'FAKE DUMP (Bear Trap)';
+        html += `<br>&#9888;&#65039; Sell Pressure + Positive CVD = <span style="color:var(--buy)">${trapType}</span>. Trap Probability: <strong>${trapProb}%</strong><br>`;
+    } else {
+        html += `<br>&#9989; কোনো ক্লিয়ার ট্র্যাপ নেই। ${wsSLZone || ''}<br>`;
+    }
+
+    // Live trap alert from WebSocket
+    if (wsTrap && !wsTrap.includes('No traps')) {
+        html += `<br>&#128308; Live Alert: <span style="color:var(--sell)">${wsTrap}</span><br>`;
+    }
+
+    // Final Verdict Calculation (Anti-Retail SMC)
+    let bullishScore = 0;
+    let bearishScore = 0;
+    
+    if (imbalance && imbalance.bidRatio > 65) bullishScore++;
+    if (imbalance && imbalance.askRatio > 65) bearishScore++;
+    if (cvdNet > 10) bullishScore++;
+    if (cvdNet < -10) bearishScore++;
+    if (wsBid) bullishScore++;
+    if (wsAsk) bearishScore++;
+    if (trapType === 'FAKE DUMP (Bear Trap)') bullishScore += 2;
+    if (trapType === 'FAKE PUMP (Bull Trap)') bearishScore += 2;
+    
+    let verdict = "";
+    let verdictColor = "";
+    let isSqueeze = false;
+
+    // Advanced OI & Premium/Discount integration
+    if (fib50 && price > fib50 && liveOrderFlow.oiTrend === 'Decreasing' && cvdNet > 0) {
+        verdict = "মার্কেট Premium Zone-এ আছে কিন্তু Open Interest কমছে! এটি রিয়েল পাম্প নয়, বরং Short Squeeze (ফেক পাম্প)। শর্ট করার জন্য রিজেকশনের অপেক্ষা করুন।";
+        verdictColor = "#f59e0b";
+        isSqueeze = true;
+    } else if (fib50 && price < fib50 && liveOrderFlow.oiTrend === 'Decreasing' && cvdNet < 0) {
+        verdict = "মার্কেট Discount Zone-এ আছে কিন্তু Open Interest কমছে! এটি রিয়েল ডাম্প নয়, বরং Long Liquidation (ফেক ডাম্প)। লং করার জন্য সাপোর্ট বাউন্সের অপেক্ষা করুন।";
+        verdictColor = "#f59e0b";
+        isSqueeze = true;
+    } else if (!isSqueeze) {
+        if (bullishScore > bearishScore + 1) {
+            verdict = "ইনস্টিটিউশনাল অর্ডার ফ্লো বুলিশ। প্রাইস Discount Zone-এ থাকলে লং (Long) সেটআপ নিতে পারেন।";
+            verdictColor = "var(--buy)";
+        } else if (bearishScore > bullishScore + 1) {
+            verdict = "ইনস্টিটিউশনাল অর্ডার ফ্লো বিয়ারিশ। প্রাইস Premium Zone-এ থাকলে শর্ট (Short) সেটআপ নিতে পারেন।";
+            verdictColor = "var(--sell)";
+        } else {
+            verdict = "মার্কেট সাইডওয়েজ বা কনফিউজিং। কোনো ক্লিয়ার ডাইরেকশন নেই, ট্রেড থেকে দূরে থাকুন।";
+            verdictColor = "#9ca3af";
+        }
+    }
+    
+    html += `<br><hr style="border-color:#334155; margin:10px 0;"><strong style="font-size:1.1em;">&#128161; চূড়ান্ত সিদ্ধান্ত (Verdict):</strong> <span style="color:${verdictColor}; font-weight:bold;">${verdict}</span><br>`;
+
+    return html;
+}
+
+
+
+
+app.post('/api/jarvis-ai', async (req, res) => {
+    try {
+        const apiKey = process.env.GEMINI_API_KEY;
+        if (!apiKey) return res.status(400).json({ error: "GEMINI_API_KEY environment variable is not set." });
+        
+        const prompt = "You are JARVIS. Give a 3 sentence market analysis in Bengali.";
+        const models = ['gemini-2.5-flash', 'gemini-2.0-flash'];
+        let resultHtml = null;
+        for (const model of models) {
+            try {
+                const response = await axios.post(
+                    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+                    { contents: [{ parts: [{ text: prompt }] }] },
+                    { timeout: 5000 }
+                );
+                if (response.data && response.data.candidates) {
+                    resultHtml = response.data.candidates[0].content.parts[0].text;
+                    break;
+                }
+            } catch (err) {}
+        }
+        
+        if (resultHtml) {
+            resultHtml = resultHtml.replace(/\`\`\`html/gi, '').replace(/\`\`\`/g, '').trim();
+            res.json({ success: true, html: resultHtml });
+        } else {
+            console.log("Falling back to Internal JARVIS Engine...");
+            const internalHtml = generateInternalJarvisAnalysis(req.body);
+            res.json({ success: true, html: internalHtml, internal: true });
+        }
+        
+    } catch(err) {
+        console.error("JARVIS AI Error:", err);
+        const internalHtml = generateInternalJarvisAnalysis(req.body);
+        res.json({ success: true, html: internalHtml, internal: true });
+    }
+});
 
 app.post('/api/jarvis-chat', async (req, res) => {
     try {
