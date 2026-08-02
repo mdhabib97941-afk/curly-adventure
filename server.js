@@ -1497,18 +1497,28 @@ function generateInternalJarvisAnalysis(data) {
 
     // ===== 1. MACRO VIEW =====
     html += '&#127183; <strong>Macro View (High Timeframe - 1D/4H):</strong><br>';
-    let t1Color = trend1D === 'Bullish' ? 'var(--buy)' : (trend1D === 'Bearish' ? 'var(--sell)' : '#fff');
-    let t4Color = trend4H === 'Bullish' ? 'var(--buy)' : (trend4H === 'Bearish' ? 'var(--sell)' : '#fff');
+    // Use includes() for flexible trend matching (values like "Bullish Momentum (Aggressive Buying)")
+    const is1DBull = trend1D.toLowerCase().includes('bullish') || trend1D.toLowerCase().includes('accumulation');
+    const is1DBear = trend1D.toLowerCase().includes('bearish') || trend1D.toLowerCase().includes('distribution');
+    const is4HBull = trend4H.toLowerCase().includes('bullish') || trend4H.toLowerCase().includes('accumulation');
+    const is4HBear = trend4H.toLowerCase().includes('bearish') || trend4H.toLowerCase().includes('distribution');
+
+    let t1Color = is1DBull ? 'var(--buy)' : (is1DBear ? 'var(--sell)' : '#fff');
+    let t4Color = is4HBull ? 'var(--buy)' : (is4HBear ? 'var(--sell)' : '#fff');
     html += '4H Trend: <span style="color:' + t4Color + '">' + trend4H + '</span> | Daily Trend: <span style="color:' + t1Color + '">' + trend1D + '</span><br>';
 
     if (macroCVD > 0) html += '24H Macro CVD: <span style="color:var(--buy)">' + macroCVD.toFixed(2) + ' BTC bought</span><br>';
     else if (macroCVD < 0) html += '24H Macro CVD: <span style="color:var(--sell)">' + macroCVD.toFixed(2) + ' BTC sold</span><br>';
     else html += '24H Macro CVD: Neutral<br>';
 
-    if (trend1D === 'Bullish' && trend4H === 'Bullish') {
+    if (is1DBull && is4HBull) {
         html += 'Macro Verdict: <span style="color:var(--buy)">বড় টাইমফ্রেমে মার্কেট স্ট্রং বুলিশ। লং পজিশন হোল্ড করা সেফ। শর্ট টার্ম ডাম্পগুলো শুধু ফেকআউট।</span><br>';
-    } else if (trend1D === 'Bearish' && trend4H === 'Bearish') {
+    } else if (is1DBear && is4HBear) {
         html += 'Macro Verdict: <span style="color:var(--sell)">বড় টাইমফ্রেমে মার্কেট স্ট্রং বিয়ারিশ। শর্ট পজিশন হোল্ড করা সেফ। শর্ট টার্ম পাম্পগুলো শুধু ফেকআউট।</span><br>';
+    } else if (is1DBull && is4HBear) {
+        html += 'Macro Verdict: <span style="color:#f59e0b">Daily বুলিশ কিন্তু 4H বিয়ারিশ — শর্ট টার্ম পুলব্যাক চলছে, বড় ট্রেন্ড এখনও আপ।</span><br>';
+    } else if (is1DBear && is4HBull) {
+        html += 'Macro Verdict: <span style="color:#f59e0b">Daily বিয়ারিশ কিন্তু 4H বুলিশ — Dead Cat Bounce সম্ভব, সাবধানে লং নিন।</span><br>';
     } else {
         html += 'Macro Verdict: <span style="color:#f59e0b">বড় টাইমফ্রেমে মার্কেট চপি বা রেঞ্জিং। ট্রেন্ড ক্লিয়ার নয়।</span><br>';
     }
@@ -1605,13 +1615,13 @@ function generateInternalJarvisAnalysis(data) {
     // ===== 4. VERDICT =====
     html += '<br><hr style="border-color:#333; margin:15px 0;">';
     let verdictStr = '';
-    if (trapType === 'Bear Trap' || (trend1D === 'Bullish' && cvdNet > 10)) {
+    if (trapType === 'Bear Trap' || (is1DBull && cvdNet > 10)) {
         verdictStr = '<span style="color:var(--buy)">ফেক ডাম্প (Bear Trap) চলছে! অর্ডার বুকে সেলিং প্রেসার থাকলেও স্পট মার্কেটে ওয়েলসরা বাই করছে (Positive CVD)। মার্কেট উপরে পাম্প করার সম্ভাবনা খুব বেশি। (Long Setup)</span>';
-    } else if (trapType === 'Bull Trap' || (trend1D === 'Bearish' && cvdNet < -10)) {
+    } else if (trapType === 'Bull Trap' || (is1DBear && cvdNet < -10)) {
         verdictStr = '<span style="color:var(--sell)">ফেক পাম্প (Bull Trap) চলছে! অর্ডার বুকে বাইং প্রেসার থাকলেও স্পট মার্কেটে ওয়েলসরা সেল করছে (Negative CVD)। মার্কেট নিচে ডাম্প করার সম্ভাবনা খুব বেশি। (Short Setup)</span>';
-    } else if (ls > 2.0 && trend4H === 'Bearish') {
+    } else if (ls > 2.0 && is4HBear) {
         verdictStr = '<span style="color:var(--sell)">রিটেইল ট্রেডাররা হিউজ লং পজিশন নিয়ে বসে আছে (Long/Short > 2.0) এবং ম্যাক্রো ট্রেন্ড বিয়ারিশ। ওয়েলসরা লং-দের লিকুইডেট করার জন্য ডাম্প করতে পারে। (High Risk)</span>';
-    } else if (ls < 0.8 && trend4H === 'Bullish') {
+    } else if (ls < 0.8 && is4HBull) {
         verdictStr = '<span style="color:var(--buy)">রিটেইল ট্রেডাররা হিউজ শর্ট পজিশন নিয়ে বসে আছে (Long/Short < 0.8) এবং ম্যাক্রো ট্রেন্ড বুলিশ। শর্ট স্কুইজ (Short Squeeze) হওয়ার চান্স অনেক বেশি। (Long Setup)</span>';
     } else {
         verdictStr = '<span style="color:#f59e0b">মার্কেটে বর্তমানে ক্লিয়ার কোনো ডিরেকশন নেই। ওয়েলসরা চপি মুভমেন্ট করে রিটেইলারদের স্টপ লস হান্ট করছে। স্ক্যাল্পিং ছাড়া কোনো পজিশন নেওয়া রিস্কি।</span>';
