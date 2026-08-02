@@ -1112,6 +1112,29 @@ let liveOrderFlow = {
     macroTrend4h: "Neutral"
 };
 
+function analyzeInstitutionalOrderFlow(open, close, takerBuyVol, totalVol) {
+    const sellVol = totalVol - takerBuyVol;
+    const delta = takerBuyVol - sellVol;
+    
+    // Absorption Logic (Whales trapping retail)
+    if (delta > 0 && close <= open) {
+        return "Distribution (Limit Sell Absorption)"; 
+    }
+    if (delta < 0 && close >= open) {
+        return "Accumulation (Limit Buy Absorption)";
+    }
+    
+    // Momentum Logic
+    if (delta > 0 && close > open) {
+        return "Bullish Momentum (Aggressive Buying)";
+    }
+    if (delta < 0 && close < open) {
+        return "Bearish Momentum (Aggressive Selling)";
+    }
+    
+    return "Neutral (Low Delta)";
+}
+
 async function fetchMacroData(symbol) {
     try {
         const kline1dRes = await axios.get(`https://api1.binance.com/api/v3/klines?symbol=${symbol}&interval=1d&limit=1`, {timeout:5000});
@@ -1123,21 +1146,23 @@ async function fetchMacroData(symbol) {
             const takerBuyVol = parseFloat(d[9]);
             const sellVol = totalVol - takerBuyVol;
             liveOrderFlow.macroCvdNet = takerBuyVol - sellVol;
-            liveOrderFlow.dailyTrend = dailyClose >= dailyOpen ? 'Bullish' : 'Bearish';
+            liveOrderFlow.dailyTrend = analyzeInstitutionalOrderFlow(dailyOpen, dailyClose, takerBuyVol, totalVol);
         }
 
-        const kline4hRes = await axios.get(`https://api1.binance.com/api/v3/klines?symbol=${symbol}&interval=4h&limit=2`, {timeout:5000});
-        if (kline4hRes.data && kline4hRes.data.length === 2) {
-            const prev4h = kline4hRes.data[0];
-            const curr4h = kline4hRes.data[1];
-            const prevClose = parseFloat(prev4h[4]);
-            const currClose = parseFloat(curr4h[4]);
-            liveOrderFlow.macroTrend4h = currClose >= prevClose ? 'Bullish' : 'Bearish';
+        const kline4hRes = await axios.get(`https://api1.binance.com/api/v3/klines?symbol=${symbol}&interval=4h&limit=1`, {timeout:5000});
+        if (kline4hRes.data && kline4hRes.data.length > 0) {
+            const d4 = kline4hRes.data[0];
+            const h4Open = parseFloat(d4[1]);
+            const h4Close = parseFloat(d4[4]);
+            const h4TotalVol = parseFloat(d4[5]);
+            const h4TakerBuy = parseFloat(d4[9]);
+            liveOrderFlow.macroTrend4h = analyzeInstitutionalOrderFlow(h4Open, h4Close, h4TakerBuy, h4TotalVol);
         }
     } catch(err) {
         console.error("Macro data fetch error:", err.message);
     }
 }
+
 setInterval(() => fetchMacroData('BTCUSDT'), 5 * 60 * 1000);
 setTimeout(() => fetchMacroData('BTCUSDT'), 2000);
 
@@ -1325,12 +1350,16 @@ function generateInternalJarvisAnalysis(data) {
         let mCvdColor = liveOrderFlow.macroCvdNet > 0 ? 'var(--buy)' : 'var(--sell)';
         html += `4H Trend: <span style="color:${macroColor}">${liveOrderFlow.macroTrend4h}</span> | Daily Trend: ${liveOrderFlow.dailyTrend}<br>`;
         html += `24H Macro CVD: <span style="color:${mCvdColor}">${liveOrderFlow.macroCvdNet.toFixed(2)} BTC ${liveOrderFlow.macroCvdNet > 0 ? 'bought' : 'sold'}</span><br>`;
-        if (liveOrderFlow.macroTrend4h === 'Bullish' && liveOrderFlow.macroCvdNet > 0) {
-            html += `<span style="color:var(--buy)"><strong>Macro Verdict:</strong> বড় টাইমফ্রেমে মার্কেট স্ট্রং বুলিশ। লং পজিশন হোল্ড করা সেফ। শর্ট টার্ম ডাম্পগুলো শুধু ফেকআউট।</span><br><br>`;
-        } else if (liveOrderFlow.macroTrend4h === 'Bearish' && liveOrderFlow.macroCvdNet < 0) {
-            html += `<span style="color:var(--sell)"><strong>Macro Verdict:</strong> বড় টাইমফ্রেমে মার্কেট স্ট্রং বিয়ারিশ। শর্ট পজিশন হোল্ড করা সেফ। শর্ট টার্ম পাম্পগুলো শুধু ফেকআউট।</span><br><br>`;
+        if (liveOrderFlow.macroTrend4h.includes("Accumulation")) {
+            html += `<span style="color:var(--buy)"><strong>Macro Verdict:</strong> বড় টাইমফ্রেমে মার্কেট স্ট্রং বুলিশ (Institutional Accumulation)! প্রচুর সেল প্রেসার (Negative Delta) থাকা সত্ত্বেও ওয়েলসরা লিমিট বাই (Buy Walls) দিয়ে সব লিকুইডিটি কিনে নিয়েছে।</span><br><br>`;
+        } else if (liveOrderFlow.macroTrend4h.includes("Distribution")) {
+            html += `<span style="color:var(--sell)"><strong>Macro Verdict:</strong> বড় টাইমফ্রেমে মার্কেট স্ট্রং বেয়ারিশ (Institutional Distribution)! প্রচুর বাই ভলিউম (Positive Delta) থাকা সত্ত্বেও ওয়েলসরা টপে লিমিট সেল দিয়ে প্রাইস রিজেক্ট করে দিচ্ছে। (Bull Trap)</span><br><br>`;
+        } else if (liveOrderFlow.macroTrend4h.includes("Bullish Momentum")) {
+            html += `<span style="color:var(--buy)"><strong>Macro Verdict:</strong> বড় টাইমফ্রেমে মার্কেট ফুল মোমেন্টামে বুলিশ। প্রচুর অ্যাগ্রেসিভ মার্কেট বায়িং (Positive Delta) হচ্ছে। লং পজিশন হোল্ড করা সেফ।</span><br><br>`;
+        } else if (liveOrderFlow.macroTrend4h.includes("Bearish Momentum")) {
+            html += `<span style="color:var(--sell)"><strong>Macro Verdict:</strong> বড় টাইমফ্রেমে মার্কেট বেয়ারিশ। প্রচুর অ্যাগ্রেসিভ মার্কেট সেলিং (Negative Delta) হচ্ছে। মার্কেট ডাউনট্রেন্ডে আছে।</span><br><br>`;
         } else {
-            html += `<span style="color:#f59e0b"><strong>Macro Verdict:</strong> বড় টাইমফ্রেমে মার্কেট কনসোলিডেট (সাইডওয়েজ) করছে। ট্রেন্ড মিক্সড অবস্থায় আছে।</span><br><br>`;
+            html += `<span style="color:#f59e0b"><strong>Macro Verdict:</strong> বড় টাইমফ্রেমে মার্কেট নিউট্রাল। ভলিউম ডেল্টা খুবই কম। ক্লিয়ার কোনো মুভমেন্ট নেই।</span><br><br>`;
         }
     }
     
