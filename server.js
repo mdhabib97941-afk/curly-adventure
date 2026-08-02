@@ -1717,6 +1717,37 @@ function generateInternalJarvisAnalysis(data) {
         });
     }
 
+    // ===== 3.6 PREDICTIVE TARGET ANALYSIS =====
+    if (curPrice > 0) {
+        html += '<br><hr style="border-color:#333; margin:15px 0;">';
+        html += '<strong>&#128302; Predictive Target Analysis (Next Moves):</strong><br>';
+        
+        let upTargets = topZones.filter(z => z.price > curPrice).sort((a,b) => a.price - b.price);
+        let downTargets = topZones.filter(z => z.price < curPrice).sort((a,b) => b.price - a.price);
+
+        // UPSIDE PREDICTION
+        html += '<br><span style="color:var(--buy)">&#128640; <strong>If Market PUMPS (Upside Targets):</strong></span><br>';
+        let uIdx = 1;
+        if (wsAsk) {
+            html += `&nbsp;&nbsp;&nbsp;&nbsp;🎯 Target ${uIdx++}: <strong>$${wsAsk.price.toLocaleString()}</strong> (Whale Sell Wall - Resistance/Distribution)<br>`;
+        }
+        for (let i = 0; i < Math.min(2, upTargets.length); i++) {
+            html += `&nbsp;&nbsp;&nbsp;&nbsp;🎯 Target ${uIdx++}: <strong>$${upTargets[i].price.toLocaleString()}</strong> (Liquidation Hunt - ${upTargets[i].shortVol > upTargets[i].longVol ? 'Short Squeeze' : 'Long Trap'})<br>`;
+        }
+        if (uIdx === 1) html += '&nbsp;&nbsp;&nbsp;&nbsp;❌ No clear upside target found in current data.<br>';
+
+        // DOWNSIDE PREDICTION
+        html += '<br><span style="color:var(--sell)">&#128201; <strong>If Market DUMPS (Downside Targets):</strong></span><br>';
+        let dIdx = 1;
+        if (wsBid) {
+            html += `&nbsp;&nbsp;&nbsp;&nbsp;🎯 Target ${dIdx++}: <strong>$${wsBid.price.toLocaleString()}</strong> (Whale Buy Wall - Support/Accumulation)<br>`;
+        }
+        for (let i = 0; i < Math.min(2, downTargets.length); i++) {
+            html += `&nbsp;&nbsp;&nbsp;&nbsp;🎯 Target ${dIdx++}: <strong>$${downTargets[i].price.toLocaleString()}</strong> (Liquidation Hunt - ${downTargets[i].longVol > downTargets[i].shortVol ? 'Longs Rekt' : 'Short Trap'})<br>`;
+        }
+        if (dIdx === 1) html += '&nbsp;&nbsp;&nbsp;&nbsp;❌ No clear downside target found in current data.<br>';
+    }
+
     // ===== 4. VERDICT =====
     html += '<br><hr style="border-color:#333; margin:15px 0;">';
     let verdictStr = '';
