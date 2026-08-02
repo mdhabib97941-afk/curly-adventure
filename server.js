@@ -1,4 +1,10 @@
-import express from 'express';
+
+        // Update macroData object for generateInternalJarvisAnalysis
+        liveOrderFlow.macroData = {
+            trend1D: trend1D,
+            trend4H: trend4H,
+            macroCVD: liveOrderFlow.macroCvdNet || 0
+        };import express from 'express';
 import cors from 'cors';
 import axios from 'axios';
 import sqlite3 from 'sqlite3';
@@ -9,13 +15,6 @@ import WebSocket from 'ws';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
-
-const PORT   = process.env.PORT || 3000;
-let SYMBOL = 'BTCUSDT';
-const BASE   = 'https://data-api.binance.vision';
-
-// Timeframe intervals in milliseconds
-const TF_MS = { '5m': 300000, '15m': 900000, '1h': 3600000, '4h': 14400000, '1d': 86400000 };
 
 const app = express();
 app.use(cors());
@@ -53,12 +52,32 @@ app.get('/api/symbol', async (req, res) => {
     res.json({symbol: SYMBOL});
 });
 
+const PORT   = process.env.PORT || 3000;
+let SYMBOL = 'BTCUSDT';
+const BASE   = 'https://data-api.binance.vision';
+
+// Timeframe intervals in milliseconds
+const TF_MS = { '5m': 300000, '15m': 900000, '1h': 3600000, '4h': 14400000, '1d': 86400000 };
 
 // ─── DATABASE ──────────────────────────────────────────────────────────────────
 
 // ─── MONGODB CONNECTION ────────────────────────────────────────────────────────
 const mongoURI = process.env.MONGO_URI || "mongodb+srv://mdhabib97941_db_user:FoQH7HjGaLOIzwNY@cluster0.iiyn4rv.mongodb.net/alphaflow?retryWrites=true&w=majority";
 mongoose.connect(mongoURI, { useNewUrlParser: true, useUnifiedTopology: true })
+
+// HedgeFundData Schema (48h TTL auto-delete)
+const hedgeFundSchema = new mongoose.Schema({
+    timestamp: { type: Date, default: Date.now, index: { expireAfterSeconds: 172800 } },
+    fundingRate: Number,
+    longShortRatio: Number,
+    liquidationsLongCount: Number,
+    liquidationsShortCount: Number,
+    liquidationsLongVol: Number,
+    liquidationsShortVol: Number
+});
+const HedgeFundData = mongoose.model('HedgeFundData', hedgeFundSchema);
+console.log("[DB] HedgeFundData schema ready (48h TTL).");
+
     .then(() => console.log('[MONGODB] Connected successfully!'))
     .catch(err => console.error('[MONGODB] Connection error:', err));
 
@@ -75,18 +94,6 @@ const OrderbookSnapshotSchema = new mongoose.Schema({
     symbol: String, bid_price: Number, bid_volume: Number, ask_price: Number, ask_volume: Number, spread: Number
 });
 const OrderbookSnapshot = mongoose.model('OrderbookSnapshot', OrderbookSnapshotSchema);
-
-
-const HedgeFundDataSchema = new mongoose.Schema({
-    timestamp: { type: Date, default: Date.now, expires: 172800 }, // Auto-delete after 48 hours
-    fundingRate: Number,
-    longShortRatio: Number,
-    liquidationsLongCount: Number,
-    liquidationsShortCount: Number,
-    liquidationsLongVol: Number,
-    liquidationsShortVol: Number
-});
-const HedgeFundData = mongoose.model('HedgeFundData', HedgeFundDataSchema);
 
 const db = new sqlite3.Database(path.join(__dirname, 'database.sqlite'));
 db.serialize(() => {
@@ -1110,16 +1117,6 @@ app.get('/api/brain/insights', (req, res) => {
 
 // ─── LIVE ORDER FLOW & RETAIL TRAP TRACKING (WebSockets) ────────────────────
 let liveOrderFlow = {
-    fundingRate: 0,
-    longShortRatio: 0,
-    recentLiquidations: { long: 0, short: 0, longVol: 0, shortVol: 0 },
-
-    history24H: {
-        totalLongRektVol: 0,
-        totalShortRektVol: 0,
-        fundingTrend: 'Neutral'
-    },
-
     whaleWallBid: null, // { price, qty }
     whaleWallAsk: null, // { price, qty }
     cvd: 0,
@@ -1128,11 +1125,19 @@ let liveOrderFlow = {
     currentPrice: null,
     trapAlert: null, // text alert string
     stopLossZone: null, // text alert string
-    spoofAlert: null // text alert string
-,
+    spoofAlert: null, // text alert string
     macroCvdNet: 0,
     dailyTrend: "Neutral",
-    macroTrend4h: "Neutral"
+    macroTrend4h: "Neutral",
+    // Hedge Fund Desk
+    openInterest: null,
+    oiTrend: "Stable",
+    fundingRate: 0,
+    longShortRatio: 0,
+    recentLiquidations: { long: 0, short: 0, longVol: 0, shortVol: 0 },
+    history24H: { totalLongRektVol: 0, totalShortRektVol: 0, fundingTrend: "Neutral" },
+    // Macro (readable names for internal analysis)
+    macroData: null
 };
 
 function analyzeInstitutionalOrderFlow(open, close, takerBuyVol, totalVol) {
@@ -1186,70 +1191,6 @@ async function fetchMacroData(symbol) {
     }
 }
 
-
-async function fetchHedgeFundData(symbol) {
-    try {
-        let fr = 0;
-        let ls = 0;
-
-        const frRes = await axios.get(`https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${symbol}`, {timeout:5000});
-        if (frRes.data) {
-            fr = parseFloat(frRes.data.lastFundingRate);
-            liveOrderFlow.fundingRate = fr;
-        }
-
-        const lsRes = await axios.get(`https://fapi.binance.com/futures/data/globalLongShortAccountRatio?symbol=${symbol}&period=5m`, {timeout:5000});
-        if (lsRes.data && lsRes.data.length > 0) {
-            ls = parseFloat(lsRes.data[0].longShortRatio);
-            liveOrderFlow.longShortRatio = ls;
-        }
-
-        // Save current 5m snapshot to MongoDB
-        const snapshot = new HedgeFundData({
-            fundingRate: fr,
-            longShortRatio: ls,
-            liquidationsLongCount: liveOrderFlow.recentLiquidations.long,
-            liquidationsShortCount: liveOrderFlow.recentLiquidations.short,
-            liquidationsLongVol: liveOrderFlow.recentLiquidations.longVol,
-            liquidationsShortVol: liveOrderFlow.recentLiquidations.shortVol
-        });
-        await snapshot.save();
-
-        // Analyze last 24 Hours from MongoDB
-        const time24hAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-        const data24h = await HedgeFundData.find({ timestamp: { $gte: time24hAgo } }).sort({timestamp: 1});
-        
-        let totalLongRekt = 0;
-        let totalShortRekt = 0;
-        
-        if (data24h && data24h.length > 0) {
-            data24h.forEach(doc => {
-                totalLongRekt += doc.liquidationsLongVol || 0;
-                totalShortRekt += doc.liquidationsShortVol || 0;
-            });
-            
-            liveOrderFlow.history24H.totalLongRektVol = totalLongRekt;
-            liveOrderFlow.history24H.totalShortRektVol = totalShortRekt;
-            
-            const firstFr = data24h[0].fundingRate || 0;
-            const lastFr = fr;
-            if (lastFr > firstFr + 0.00005) liveOrderFlow.history24H.fundingTrend = 'Increasing';
-            else if (lastFr < firstFr - 0.00005) liveOrderFlow.history24H.fundingTrend = 'Decreasing';
-            else liveOrderFlow.history24H.fundingTrend = 'Neutral';
-        }
-        
-        // Reset 5m counters after saving
-        liveOrderFlow.recentLiquidations = { long: 0, short: 0, longVol: 0, shortVol: 0 };
-        
-    } catch(err) {
-        console.error("Hedge Fund data fetch/db error:", err.message);
-    }
-}
-// Run every 5 mins
-setInterval(() => fetchHedgeFundData('BTCUSDT'), 5 * 60 * 1000);
-fetchHedgeFundData('BTCUSDT');
-
-
 setInterval(() => fetchMacroData('BTCUSDT'), 5 * 60 * 1000);
 setTimeout(() => fetchMacroData('BTCUSDT'), 2000);
 
@@ -1262,41 +1203,6 @@ let lastTradeId = 0;
 
 
 const WS_BASE = 'wss://stream.binance.com:9443/ws';
-let wsForce = null;
-function connectForceOrderWS(symbol) {
-    let streamSymbol = symbol.toLowerCase();
-    if (wsForce) { try { wsForce.close(); } catch(e) {} }
-    wsForce = new WebSocket(`wss://fstream.binance.com/ws/${streamSymbol}@forceOrder`);
-    
-    wsForce.on('open', () => console.log(`[WS] HedgeFund ForceOrder connected for ${symbol}`));
-    
-    wsForce.on('message', (data) => {
-        try {
-            const parsed = JSON.parse(data);
-            if (parsed.e === 'forceOrder') {
-                const order = parsed.o;
-                const side = order.S; // "BUY" means short got liquidated. "SELL" means long got liquidated.
-                const price = parseFloat(order.p);
-                const qty = parseFloat(order.q);
-                const vol = price * qty;
-                
-                if (side === 'SELL') { // Long Liquidated
-                    liveOrderFlow.recentLiquidations.long++;
-                    liveOrderFlow.recentLiquidations.longVol += vol;
-                } else if (side === 'BUY') { // Short Liquidated
-                    liveOrderFlow.recentLiquidations.short++;
-                    liveOrderFlow.recentLiquidations.shortVol += vol;
-                }
-            }
-        } catch(e) {}
-    });
-    
-    wsForce.on('close', () => setTimeout(() => connectForceOrderWS(symbol), 5000));
-    wsForce.on('error', () => {});
-}
-
-
-
 let wsDepth = null;
 let wsTrade = null;
 
@@ -1454,6 +1360,98 @@ async function fetchOpenInterest() {
 setInterval(fetchOpenInterest, 30000);
 fetchOpenInterest();
 
+// =====================================================================
+// LIQUIDATION WEBSOCKET (forceOrder stream)
+// =====================================================================
+const liqWs = new WebSocket('wss://fstream.binance.com/ws/btcusdt@forceOrder');
+liqWs.on('message', (raw) => {
+    try {
+        const msg = JSON.parse(raw.toString());
+        const o = msg.o;
+        if (!o) return;
+        const side = o.S; // BUY or SELL
+        const qty = parseFloat(o.q) || 0;
+        const price = parseFloat(o.p) || 0;
+        const vol = qty * price;
+        if (side === 'BUY') {
+            // BUY liquidation = Short position liquidated
+            liveOrderFlow.recentLiquidations.short += 1;
+            liveOrderFlow.recentLiquidations.shortVol += vol;
+        } else {
+            // SELL liquidation = Long position liquidated
+            liveOrderFlow.recentLiquidations.long += 1;
+            liveOrderFlow.recentLiquidations.longVol += vol;
+        }
+    } catch(e) {}
+});
+liqWs.on('open', () => console.log('[WS] Liquidation stream connected for BTCUSDT'));
+liqWs.on('error', (e) => console.error('[WS] Liquidation stream error:', e.message));
+
+// =====================================================================
+// FETCH HEDGE FUND DATA (Funding Rate, Long/Short, Save to MongoDB)
+// =====================================================================
+async function fetchHedgeFundData(symbol) {
+    try {
+        let fr = 0;
+        let ls = 0;
+
+        const frRes = await axios.get('https://fapi.binance.com/fapi/v1/premiumIndex?symbol=' + symbol, {timeout: 5000});
+        if (frRes.data) {
+            fr = parseFloat(frRes.data.lastFundingRate);
+            liveOrderFlow.fundingRate = fr;
+        }
+
+        const lsRes = await axios.get('https://fapi.binance.com/futures/data/globalLongShortAccountRatio?symbol=' + symbol + '&period=5m', {timeout: 5000});
+        if (lsRes.data && lsRes.data.length > 0) {
+            ls = parseFloat(lsRes.data[0].longShortRatio);
+            liveOrderFlow.longShortRatio = ls;
+        }
+
+        // Save snapshot to MongoDB
+        try {
+            const snapshot = new HedgeFundData({
+                fundingRate: fr,
+                longShortRatio: ls,
+                liquidationsLongCount: liveOrderFlow.recentLiquidations.long,
+                liquidationsShortCount: liveOrderFlow.recentLiquidations.short,
+                liquidationsLongVol: liveOrderFlow.recentLiquidations.longVol,
+                liquidationsShortVol: liveOrderFlow.recentLiquidations.shortVol
+            });
+            await snapshot.save();
+
+            // Analyze last 24h from MongoDB
+            const time24hAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+            const data24h = await HedgeFundData.find({ timestamp: { $gte: time24hAgo } }).sort({ timestamp: 1 });
+
+            if (data24h && data24h.length > 0) {
+                let totalLongRekt = 0, totalShortRekt = 0;
+                data24h.forEach(doc => {
+                    totalLongRekt += doc.liquidationsLongVol || 0;
+                    totalShortRekt += doc.liquidationsShortVol || 0;
+                });
+                liveOrderFlow.history24H.totalLongRektVol = totalLongRekt;
+                liveOrderFlow.history24H.totalShortRektVol = totalShortRekt;
+
+                const firstFr = data24h[0].fundingRate || 0;
+                if (fr > firstFr + 0.00005) liveOrderFlow.history24H.fundingTrend = 'Increasing';
+                else if (fr < firstFr - 0.00005) liveOrderFlow.history24H.fundingTrend = 'Decreasing';
+                else liveOrderFlow.history24H.fundingTrend = 'Neutral';
+            }
+        } catch(dbErr) {
+            console.error('[MongoDB] HedgeFundData save error:', dbErr.message);
+        }
+
+        // Reset 5m counters
+        liveOrderFlow.recentLiquidations = { long: 0, short: 0, longVol: 0, shortVol: 0 };
+
+    } catch(err) {
+        console.error('[HedgeFund] Fetch error:', err.message);
+    }
+}
+setInterval(() => fetchHedgeFundData('BTCUSDT'), 5 * 60 * 1000);
+fetchHedgeFundData('BTCUSDT');
+
+
 // --- Internal JARVIS AI Engine ---
 function generateInternalJarvisAnalysis(data) {
     const price    = liveOrderFlow.currentPrice || data.currentPrice;
@@ -1462,10 +1460,9 @@ function generateInternalJarvisAnalysis(data) {
     const wsAsk    = liveOrderFlow.whaleWallAsk;
     const wsTrap   = liveOrderFlow.trapAlert;
     const wsSpoof  = liveOrderFlow.spoofAlert;
-    const wsSLZone = liveOrderFlow.stopLossZone;
-    const { swingHighs, swingLows, volatility, imbalance } = data;
-    
-    // Default Macro Data
+    const { volatility, imbalance } = data;
+
+    // Macro
     let trend1D = 'Neutral', trend4H = 'Neutral', macroCVD = 0;
     if (liveOrderFlow.macroData) {
         trend1D = liveOrderFlow.macroData.trend1D;
@@ -1473,244 +1470,143 @@ function generateInternalJarvisAnalysis(data) {
         macroCVD = liveOrderFlow.macroData.macroCVD;
     }
 
-    let html = `<strong>[Internal AI - Dual Timeframe Analysis]</strong> ${new Date().toLocaleTimeString()}<br><br>`;
+    let html = '<strong>[Internal AI - Dual Timeframe Analysis]</strong> ' + new Date().toLocaleTimeString() + '<br><br>';
 
-    // ==========================================
-    // 1. MACRO VIEW
-    // ==========================================
-    html += `&#127183; <strong>Macro View (High Timeframe - 1D/4H):</strong><br>`;
-    
+    // ===== 1. MACRO VIEW =====
+    html += '&#127183; <strong>Macro View (High Timeframe - 1D/4H):</strong><br>';
     let t1Color = trend1D === 'Bullish' ? 'var(--buy)' : (trend1D === 'Bearish' ? 'var(--sell)' : '#fff');
     let t4Color = trend4H === 'Bullish' ? 'var(--buy)' : (trend4H === 'Bearish' ? 'var(--sell)' : '#fff');
-    html += `4H Trend: <span style="color:${t4Color}">${trend4H}</span> | Daily Trend: <span style="color:${t1Color}">${trend1D}</span><br>`;
-    
-    if (macroCVD > 0) {
-        html += `24H Macro CVD: <span style="color:var(--buy)">${macroCVD.toFixed(2)} BTC bought</span><br>`;
-    } else if (macroCVD < 0) {
-        html += `24H Macro CVD: <span style="color:var(--sell)">${macroCVD.toFixed(2)} BTC sold</span><br>`;
-    } else {
-        html += `24H Macro CVD: Neutral<br>`;
-    }
+    html += '4H Trend: <span style="color:' + t4Color + '">' + trend4H + '</span> | Daily Trend: <span style="color:' + t1Color + '">' + trend1D + '</span><br>';
 
-    // Macro Verdict Bengali
+    if (macroCVD > 0) html += '24H Macro CVD: <span style="color:var(--buy)">' + macroCVD.toFixed(2) + ' BTC bought</span><br>';
+    else if (macroCVD < 0) html += '24H Macro CVD: <span style="color:var(--sell)">' + macroCVD.toFixed(2) + ' BTC sold</span><br>';
+    else html += '24H Macro CVD: Neutral<br>';
+
     if (trend1D === 'Bullish' && trend4H === 'Bullish') {
-        html += `Macro Verdict: <span style="color:var(--buy)">বড় টাইমফ্রেমে মার্কেট স্ট্রং বুলিশ। লং পজিশন হোল্ড করা সেফ। শর্ট টার্ম ডাম্পগুলো শুধু ফেকআউট।</span><br>`;
+        html += 'Macro Verdict: <span style="color:var(--buy)">বড় টাইমফ্রেমে মার্কেট স্ট্রং বুলিশ। লং পজিশন হোল্ড করা সেফ। শর্ট টার্ম ডাম্পগুলো শুধু ফেকআউট।</span><br>';
     } else if (trend1D === 'Bearish' && trend4H === 'Bearish') {
-        html += `Macro Verdict: <span style="color:var(--sell)">বড় টাইমফ্রেমে মার্কেট স্ট্রং বিয়ারিশ। শর্ট পজিশন হোল্ড করা সেফ। শর্ট টার্ম পাম্পগুলো শুধু ফেকআউট।</span><br>`;
+        html += 'Macro Verdict: <span style="color:var(--sell)">বড় টাইমফ্রেমে মার্কেট স্ট্রং বিয়ারিশ। শর্ট পজিশন হোল্ড করা সেফ। শর্ট টার্ম পাম্পগুলো শুধু ফেকআউট।</span><br>';
     } else {
-        html += `Macro Verdict: <span style="color:#f59e0b">বড় টাইমফ্রেমে মার্কেট চপি (Choppy) বা রেঞ্জিং। ট্রেন্ড ক্লিয়ার নয়।</span><br>`;
+        html += 'Macro Verdict: <span style="color:#f59e0b">বড় টাইমফ্রেমে মার্কেট চপি বা রেঞ্জিং। ট্রেন্ড ক্লিয়ার নয়।</span><br>';
     }
 
-    // ==========================================
-    // 2. MICRO VIEW
-    // ==========================================
-    html += `<br>&#128300; <strong>Micro View (Short Timeframe - Live):</strong><br>`;
-    html += `&#9201;&#65039; <strong>Session:</strong> ${getKillzone()}<br><br>`;
-    
-    if (price) html += `Price: <strong>$${parseFloat(price).toLocaleString()}</strong><br>`;
-    
+    // ===== 2. MICRO VIEW =====
+    html += '<br>&#128300; <strong>Micro View (Short Timeframe - Live):</strong><br>';
+    html += '&#9201;&#65039; <strong>Session:</strong> ' + getKillzone() + '<br><br>';
+
+    if (price) html += 'Price: <strong>$' + parseFloat(price).toLocaleString() + '</strong><br>';
+
     if (liveOrderFlow.openInterest) {
         let oiColor = liveOrderFlow.oiTrend === 'Increasing' ? 'var(--buy)' : (liveOrderFlow.oiTrend === 'Decreasing' ? 'var(--sell)' : '#fff');
-        html += `Open Interest: <strong>${liveOrderFlow.openInterest.toLocaleString()}</strong> (<span style="color:${oiColor}">${liveOrderFlow.oiTrend}</span>)<br>`;
+        html += 'Open Interest: <strong>' + liveOrderFlow.openInterest.toLocaleString() + '</strong> (<span style="color:' + oiColor + '">' + liveOrderFlow.oiTrend + '</span>)<br>';
     }
 
-    // Volatility
     if (volatility && volatility.stdDevPct <= 0.15) {
-        html += `&#9889; <span style="color:#f59e0b">Low Volatility (${volatility.stdDevPct.toFixed(2)}%) &mdash; মার্কেট স্কুইজ হচ্ছে, বড় ব্রেকআউট বা স্পাইক আসতে পারে!</span><br>`;
+        html += '&#9889; <span style="color:#f59e0b">Low Volatility (' + volatility.stdDevPct.toFixed(2) + '%) &mdash; মার্কেট স্কুইজ হচ্ছে, বড় ব্রেকআউট বা স্পাইক আসতে পারে!</span><br>';
     } else if (volatility && volatility.stdDevPct > 0.40) {
-        html += `&#128293; <span style="color:var(--sell)">High Volatility (${volatility.stdDevPct.toFixed(2)}%) &mdash; মার্কেটে বর্তমানে হিউজ ভলিউম এবং বড় ধরনের মুভমেন্ট চলছে।</span><br>`;
+        html += '&#128293; <span style="color:var(--sell)">High Volatility (' + volatility.stdDevPct.toFixed(2) + '%) &mdash; মার্কেটে বর্তমানে হিউজ ভলিউম এবং বড় ধরনের মুভমেন্ট চলছে।</span><br>';
     }
 
-    // Liquidity Magnets (Walls)
-    if (wsAsk) html += `&#127786;&#65039; <span style="color:var(--sell)">Liquidity Magnet (Resistance): উপরে $${wsAsk.price.toFixed(2)} এ বিশাল সেলারদের দেওয়াল (${wsAsk.qty.toFixed(2)} BTC) আছে। মার্কেট উপরের দিকে ম্যাগনেটের মতো এই প্রাইসকে টার্গেট করতে পারে।</span><br>`;
-    if (wsBid) html += `&#127786;&#65039; <span style="color:var(--buy)">Liquidity Magnet (Support): নিচে $${wsBid.price.toFixed(2)} এ বিশাল বায়ারদের দেওয়াল (${wsBid.qty.toFixed(2)} BTC) আছে। মার্কেট নিচের দিকে ম্যাগনেটের মতো এই প্রাইসকে টার্গেট করতে পারে।</span><br>`;
+    if (wsAsk) html += '&#127786;&#65039; <span style="color:var(--sell)">Liquidity Magnet (Resistance): উপরে $' + wsAsk.price.toFixed(2) + ' এ বিশাল সেলারদের দেওয়াল (' + wsAsk.qty.toFixed(2) + ' BTC) আছে।</span><br>';
+    if (wsBid) html += '&#127786;&#65039; <span style="color:var(--buy)">Liquidity Magnet (Support): নিচে $' + wsBid.price.toFixed(2) + ' এ বিশাল বায়ারদের দেওয়াল (' + wsBid.qty.toFixed(2) + ' BTC) আছে।</span><br>';
+    if (wsSpoof) html += '&#128680; <span style="color:var(--sell)">Live Alert: ' + wsSpoof + ' (Spoofing Detected)</span><br>';
 
-    // Spoofing
-    if (wsSpoof) html += `&#128680; <span style="color:var(--sell)">Live Alert: ${wsSpoof} (Spoofing Detected)</span><br>`;
+    if (cvdNet > 10) html += 'CVD: <span style="color:var(--buy)">+' + cvdNet.toFixed(2) + ' BTC bought &mdash; স্পট মার্কেটে প্রচুর অ্যাগ্রেসিভ বাইং হচ্ছে।</span><br>';
+    else if (cvdNet < -10) html += 'CVD: <span style="color:var(--sell)">' + cvdNet.toFixed(2) + ' BTC sold &mdash; স্পট মার্কেটে প্রচুর অ্যাগ্রেসিভ সেলিং হচ্ছে।</span><br>';
 
-    // CVD
-    if (cvdNet > 10) html += `CVD: <span style="color:var(--buy)">+${cvdNet.toFixed(2)} BTC bought &mdash; স্পট মার্কেটে প্রচুর অ্যাগ্রেসিভ বাইং হচ্ছে।</span><br>`;
-    else if (cvdNet < -10) html += `CVD: <span style="color:var(--sell)">${cvdNet.toFixed(2)} BTC sold &mdash; স্পট মার্কেটে প্রচুর অ্যাগ্রেসিভ সেলিং হচ্ছে।</span><br>`;
-
-    // Trap
+    // Trap detection
     let isBullishBias = false;
     if (imbalance && imbalance.bidRatio > 65) isBullishBias = true;
-    
     let trapProb = 20, trapType = 'None';
     if (isBullishBias && cvdNet < 0) { trapProb = 85; trapType = 'Bull Trap'; }
     if (!isBullishBias && cvdNet > 0) { trapProb = 85; trapType = 'Bear Trap'; }
     if (wsTrap && wsTrap.includes('Bull Trap')) { trapProb = 95; trapType = 'Bull Trap'; }
     if (wsTrap && wsTrap.includes('Bear Trap')) { trapProb = 95; trapType = 'Bear Trap'; }
 
-    if (trapType === 'Bear Trap') {
-        html += `<br>&#9888;&#65039; <span style="color:var(--buy)">Sell Pressure + Positive CVD = FAKE DUMP (Bear Trap). Trap Probability: ${trapProb}%</span><br>`;
-    } else if (trapType === 'Bull Trap') {
-        html += `<br>&#9888;&#65039; <span style="color:var(--sell)">Buy Pressure + Negative CVD = FAKE PUMP (Bull Trap). Trap Probability: ${trapProb}%</span><br>`;
-    }
+    if (trapType === 'Bear Trap') html += '<br>&#9888;&#65039; <span style="color:var(--buy)">Sell Pressure + Positive CVD = FAKE DUMP (Bear Trap). Trap Probability: ' + trapProb + '%</span><br>';
+    else if (trapType === 'Bull Trap') html += '<br>&#9888;&#65039; <span style="color:var(--sell)">Buy Pressure + Negative CVD = FAKE PUMP (Bull Trap). Trap Probability: ' + trapProb + '%</span><br>';
 
-    // ==========================================
-    // 3. HEDGE FUND DESK
-    // ==========================================
+    // ===== 3. HEDGE FUND DESK =====
     let fr = liveOrderFlow.fundingRate || 0;
     let ls = liveOrderFlow.longShortRatio || 0;
     let liq = liveOrderFlow.recentLiquidations || { long: 0, short: 0, longVol: 0, shortVol: 0 };
     let hist = liveOrderFlow.history24H || {};
-    
+
     if (ls > 0) {
-        html += `<br><hr style="border-color:#333; margin:15px 0;">`;
-        html += `<strong>&#127976; Hedge Fund Desk (Leverage & Liquidations):</strong><br>`;
-        
-        let frColor = fr > 0.0001 ? "var(--sell)" : (fr < -0.0001 ? "var(--buy)" : "#fff");
-        let frType = fr > 0.0001 ? "Extreme Long Leverage (Risk of Long Squeeze)" : (fr < -0.0001 ? "Extreme Short Leverage (Risk of Short Squeeze)" : "Neutral Funding");
-        html += `&nbsp;&nbsp;&mdash; Funding Rate: <strong style="color:${frColor}">${(fr*100).toFixed(4)}%</strong> - ${frType}<br>`;
-        
-        let lsColor = ls > 2.0 ? "var(--sell)" : (ls < 0.8 ? "var(--buy)" : "#fff");
-        html += `&nbsp;&nbsp;&mdash; Retail Long/Short Ratio: <strong style="color:${lsColor}">${ls.toFixed(2)}</strong> - `;
-        html += ls > 2.0 ? `(Too many Longs! Whales might hunt them down.)<br>` : (ls < 0.8 ? `(Too many Shorts! Squeeze potential.)<br>` : `(Balanced)<br>`);
-        
+        html += '<br><hr style="border-color:#333; margin:15px 0;">';
+        html += '<strong>&#127976; Hedge Fund Desk (Leverage & Liquidations):</strong><br>';
+
+        let frColor = fr > 0.0001 ? 'var(--sell)' : (fr < -0.0001 ? 'var(--buy)' : '#fff');
+        let frType = fr > 0.0001 ? 'Extreme Long Leverage (Risk of Long Squeeze)' : (fr < -0.0001 ? 'Extreme Short Leverage (Risk of Short Squeeze)' : 'Neutral Funding');
+        html += '&nbsp;&nbsp;&mdash; Funding Rate: <strong style="color:' + frColor + '">' + (fr*100).toFixed(4) + '%</strong> - ' + frType + '<br>';
+
+        let lsColor = ls > 2.0 ? 'var(--sell)' : (ls < 0.8 ? 'var(--buy)' : '#fff');
+        html += '&nbsp;&nbsp;&mdash; Retail Long/Short Ratio: <strong style="color:' + lsColor + '">' + ls.toFixed(2) + '</strong> - ';
+        if (ls > 2.0) html += '(Too many Longs! Whales might hunt them down.)<br>';
+        else if (ls < 0.8) html += '(Too many Shorts! Squeeze potential.)<br>';
+        else html += '(Balanced)<br>';
+
         if (hist.totalLongRektVol > 0 || hist.totalShortRektVol > 0) {
-            html += `<br>&nbsp;&nbsp;&#128202; <strong>24H Liquidation History:</strong><br>`;
-            html += `&nbsp;&nbsp;&nbsp;&nbsp;&mdash; <span style="color:var(--sell)">$${(hist.totalLongRektVol).toLocaleString(undefined,{maximumFractionDigits:0})} Longs Rekt (Whales Absorb Longs)</span><br>`;
-            html += `&nbsp;&nbsp;&nbsp;&nbsp;&mdash; <span style="color:var(--buy)">$${(hist.totalShortRektVol).toLocaleString(undefined,{maximumFractionDigits:0})} Shorts Rekt (Whales Absorb Shorts)</span><br>`;
+            html += '<br>&nbsp;&nbsp;&#128202; <strong>24H Liquidation History:</strong><br>';
+            html += '&nbsp;&nbsp;&nbsp;&nbsp;&mdash; <span style="color:var(--sell)">$' + (hist.totalLongRektVol).toLocaleString(undefined,{maximumFractionDigits:0}) + ' Longs Rekt (Whales Absorb Longs)</span><br>';
+            html += '&nbsp;&nbsp;&nbsp;&nbsp;&mdash; <span style="color:var(--buy)">$' + (hist.totalShortRektVol).toLocaleString(undefined,{maximumFractionDigits:0}) + ' Shorts Rekt (Whales Absorb Shorts)</span><br>';
+            html += '&nbsp;&nbsp;&nbsp;&nbsp;&mdash; 24H Funding Trend: <strong>' + (hist.fundingTrend || 'N/A') + '</strong><br>';
         }
-        
+
         if (liq.long > 0 || liq.short > 0) {
-            html += `<br>&nbsp;&nbsp;&#128128; <strong>Live Liquidations (Last 5m):</strong><br>`;
-            if (liq.long > 0) html += `&nbsp;&nbsp;&nbsp;&nbsp;&#128315; <span style="color:var(--sell)">Longs Rekt: ${liq.long} positions ($${(liq.longVol).toLocaleString(undefined,{maximumFractionDigits:0})})</span><br>`;
-            if (liq.short > 0) html += `&nbsp;&nbsp;&nbsp;&nbsp;&#128314; <span style="color:var(--buy)">Shorts Rekt: ${liq.short} positions ($${(liq.shortVol).toLocaleString(undefined,{maximumFractionDigits:0})})</span><br>`;
+            html += '<br>&nbsp;&nbsp;&#128128; <strong>Live Liquidations (Last 5m):</strong><br>';
+            if (liq.long > 0) html += '&nbsp;&nbsp;&nbsp;&nbsp;&#128315; <span style="color:var(--sell)">Longs Rekt: ' + liq.long + ' positions ($' + (liq.longVol).toLocaleString(undefined,{maximumFractionDigits:0}) + ')</span><br>';
+            if (liq.short > 0) html += '&nbsp;&nbsp;&nbsp;&nbsp;&#128314; <span style="color:var(--buy)">Shorts Rekt: ' + liq.short + ' positions ($' + (liq.shortVol).toLocaleString(undefined,{maximumFractionDigits:0}) + ')</span><br>';
         }
     }
 
-    // ==========================================
-    // 4. VERDICT
-    // ==========================================
-    html += `<br><hr style="border-color:#333; margin:15px 0;">`;
-    
+    // ===== 4. VERDICT =====
+    html += '<br><hr style="border-color:#333; margin:15px 0;">';
     let verdictStr = '';
     if (trapType === 'Bear Trap' || (trend1D === 'Bullish' && cvdNet > 10)) {
-        verdictStr = `<span style="color:var(--buy)">ফেক ডাম্প (Bear Trap) চলছে! অর্ডার বুকে সেলিং প্রেসার থাকলেও স্পট মার্কেটে ওয়েলসরা বাই করছে (Positive CVD)। মার্কেট উপরে পাম্প করার সম্ভাবনা খুব বেশি। (Long Setup)</span>`;
+        verdictStr = '<span style="color:var(--buy)">ফেক ডাম্প (Bear Trap) চলছে! অর্ডার বুকে সেলিং প্রেসার থাকলেও স্পট মার্কেটে ওয়েলসরা বাই করছে (Positive CVD)। মার্কেট উপরে পাম্প করার সম্ভাবনা খুব বেশি। (Long Setup)</span>';
     } else if (trapType === 'Bull Trap' || (trend1D === 'Bearish' && cvdNet < -10)) {
-        verdictStr = `<span style="color:var(--sell)">ফেক পাম্প (Bull Trap) চলছে! অর্ডার বুকে বাইং প্রেসার থাকলেও স্পট মার্কেটে ওয়েলসরা সেল করছে (Negative CVD)। মার্কেট নিচে ডাম্প করার সম্ভাবনা খুব বেশি। (Short Setup)</span>`;
+        verdictStr = '<span style="color:var(--sell)">ফেক পাম্প (Bull Trap) চলছে! অর্ডার বুকে বাইং প্রেসার থাকলেও স্পট মার্কেটে ওয়েলসরা সেল করছে (Negative CVD)। মার্কেট নিচে ডাম্প করার সম্ভাবনা খুব বেশি। (Short Setup)</span>';
     } else if (ls > 2.0 && trend4H === 'Bearish') {
-        verdictStr = `<span style="color:var(--sell)">রিটেইল ট্রেডাররা হিউজ লং পজিশন নিয়ে বসে আছে (Long/Short > 2.0) এবং ম্যাক্রো ট্রেন্ড বিয়ারিশ। ওয়েলসরা লং-দের লিকুইডেট করার জন্য ডাম্প করতে পারে। (High Risk)</span>`;
+        verdictStr = '<span style="color:var(--sell)">রিটেইল ট্রেডাররা হিউজ লং পজিশন নিয়ে বসে আছে (Long/Short > 2.0) এবং ম্যাক্রো ট্রেন্ড বিয়ারিশ। ওয়েলসরা লং-দের লিকুইডেট করার জন্য ডাম্প করতে পারে। (High Risk)</span>';
     } else if (ls < 0.8 && trend4H === 'Bullish') {
-        verdictStr = `<span style="color:var(--buy)">রিটেইল ট্রেডাররা হিউজ শর্ট পজিশন নিয়ে বসে আছে (Long/Short < 0.8) এবং ম্যাক্রো ট্রেন্ড বুলিশ। শর্ট স্কুইজ (Short Squeeze) হওয়ার চান্স অনেক বেশি। (Long Setup)</span>`;
+        verdictStr = '<span style="color:var(--buy)">রিটেইল ট্রেডাররা হিউজ শর্ট পজিশন নিয়ে বসে আছে (Long/Short < 0.8) এবং ম্যাক্রো ট্রেন্ড বুলিশ। শর্ট স্কুইজ (Short Squeeze) হওয়ার চান্স অনেক বেশি। (Long Setup)</span>';
     } else {
-        verdictStr = `<span style="color:#f59e0b">মার্কেটে বর্তমানে ক্লিয়ার কোনো ডিরেকশন নেই। ওয়েলসরা চপি মুভমেন্ট করে রিটেইলারদের স্টপ লস হান্ট করছে। স্ক্যাল্পিং ছাড়া কোনো পজিশন নেওয়া রিস্কি।</span>`;
+        verdictStr = '<span style="color:#f59e0b">মার্কেটে বর্তমানে ক্লিয়ার কোনো ডিরেকশন নেই। ওয়েলসরা চপি মুভমেন্ট করে রিটেইলারদের স্টপ লস হান্ট করছে। স্ক্যাল্পিং ছাড়া কোনো পজিশন নেওয়া রিস্কি।</span>';
     }
-    
-    html += `&#128161; <strong>চূড়ান্ত সিদ্ধান্ত (Verdict):</strong> ${verdictStr}`;
+    html += '&#128161; <strong>চূড়ান্ত সিদ্ধান্ত (Verdict):</strong> ' + verdictStr;
 
     return html;
 }
 
 app.post('/api/jarvis-ai', async (req, res) => {
     try {
-        const apiKey = process.env.GEMINI_API_KEY;
-        if (!apiKey) return res.status(400).json({ error: "GEMINI_API_KEY environment variable is not set." });
-        
-        const price = liveOrderFlow.currentPrice;
-        const cvdNet = liveOrderFlow.cvd;
-        const wsBid = liveOrderFlow.whaleWallBid ? liveOrderFlow.whaleWallBid.price : 'N/A';
-        const wsAsk = liveOrderFlow.whaleWallAsk ? liveOrderFlow.whaleWallAsk.price : 'N/A';
-        const fr = liveOrderFlow.fundingRate;
-        const ls = liveOrderFlow.longShortRatio;
-        const liq = liveOrderFlow.recentLiquidations;
-        const hist = liveOrderFlow.history24H;
-        
-        const prompt = `You are J.A.R.V.I.S, an advanced institutional AI analyst for crypto (built for Hedge Funds).
-You DO NOT use retail logic (like RSI, MACD, Candlestick patterns). You ONLY analyze Liquidity, Whale Order Flow, CVD, Liquidations, and Leverage.
-Write your analysis in ONLY Bengali (HTML formatted).
-
-### CURRENT MARKET DATA (Hedge Fund Desk):
-- Current Price: $${price}
-- CVD (Cumulative Volume Delta): ${cvdNet} BTC (Whale market buying/selling)
-- Open Interest Trend: ${liveOrderFlow.oiTrend} (${liveOrderFlow.openInterest})
-- Whale Buy Wall (Limit Bids): $${wsBid}
-- Whale Sell Wall (Limit Asks): $${wsAsk}
-
-### LEVERAGE & LIQUIDATION (Smart Money View):
-- Funding Rate (Premium): ${(fr*100).toFixed(4)}% (Highly positive means extreme long leverage)
-- Retail Long/Short Ratio: ${ls} (If > 2.0, retail is heavily long and whales might hunt their stop losses).
-- 24H Liquidation History: $${hist && hist.totalLongRektVol ? hist.totalLongRektVol.toLocaleString() : 0} Longs Rekt, $${hist && hist.totalShortRektVol ? hist.totalShortRektVol.toLocaleString() : 0} Shorts Rekt.
-- Live 5m Liquidations: ${liq && liq.long ? liq.long : 0} Longs ($${liq && liq.longVol ? liq.longVol : 0}), ${liq && liq.short ? liq.short : 0} Shorts ($${liq && liq.shortVol ? liq.shortVol : 0}).
-
-### TASK:
-Give a brutal, institutional-grade market breakdown in exactly 3-4 HTML bullet points in Bengali.
-Tell the user what the whales are doing (absorbing, hunting liquidity, spoofing) based on the leverage and CVD.
-Use <strong> tags for emphasis. Do NOT use markdown code blocks like \\`\\`\\`html.`;
-        
-        const models = ['gemini-2.5-flash', 'gemini-2.0-flash'];
-        let resultHtml = null;
-        for (const model of models) {
-            try {
-                const response = await axios.post(
-                    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-                    { contents: [{ parts: [{ text: prompt }] }] },
-                    { timeout: 8000 }
-                );
-                if (response.data && response.data.candidates) {
-                    resultHtml = response.data.candidates[0].content.parts[0].text;
-                    break;
-                }
-            } catch (err) {}
-        }
-        
-        if (resultHtml) {
-            resultHtml = resultHtml.replace(/```html/gi, '').replace(/```/g, '').trim();
-            res.json({ success: true, html: resultHtml });
-        } else {
-            console.log("Falling back to Internal JARVIS Engine...");
-            const internalHtml = generateInternalJarvisAnalysis(req.body);
-            res.json({ success: true, html: internalHtml, internal: true });
-        }
-        
-    } catch(err) {
-        console.error("JARVIS AI Error:", err);
         const internalHtml = generateInternalJarvisAnalysis(req.body);
         res.json({ success: true, html: internalHtml, internal: true });
+    } catch(err) {
+        console.error("JARVIS AI Error:", err);
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
 app.post('/api/jarvis-chat', async (req, res) => {
     try {
         const { history } = req.body;
-        const apiKey = process.env.GEMINI_API_KEY;
-        if (!apiKey) return res.status(400).json({ error: "GEMINI_API_KEY environment variable is not set." });
-        
         const internalHtml = generateInternalJarvisAnalysis(req.body);
-        const prompt = "Reply to the user in Bengali.";
         
-        let resultHtml = null;
-        for (const model of ['gemini-2.5-flash', 'gemini-2.0-flash']) {
-            try {
-                const response = await axios.post(
-                    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-                    { contents: [{ parts: [{ text: prompt }] }] },
-                    { timeout: 5000 }
-                );
-                if (response.data && response.data.candidates) {
-                    resultHtml = response.data.candidates[0].content.parts[0].text;
-                    break;
-                }
-            } catch (err) {}
+        let lastUserMsg = history && history.length > 0 ? history[history.length - 1].parts[0].text : '';
+        let prefix = '';
+        if (lastUserMsg.toLowerCase().includes('hello') || lastUserMsg.toLowerCase().includes('hi') || lastUserMsg.toLowerCase().includes('হ্যালো')) {
+            prefix = 'হ্যালো! আমি J.A.R.V.I.S, আপনার অ্যাডভান্সড SMC ট্রেডিং অ্যাসিস্ট্যান্ট। বর্তমান মার্কেটের লাইভ অবস্থা নিচে দেওয়া হলো:<br><br>';
+        } else {
+            prefix = 'আপনার প্রশ্নের ভিত্তিতে বর্তমান লাইভ মার্কেটের অ্যানালাইসিস নিচে দেওয়া হলো:<br><br>';
         }
 
-        if (resultHtml) {
-            resultHtml = resultHtml.replace(/\`\`\`html/gi, '').replace(/\`\`\`/g, '').trim();
-            res.json({ success: true, text: resultHtml });
-        } else {
-            console.log("Falling back to Internal JARVIS Chat Engine...");
-            const lastMsg = history && history.length > 0 ? history[history.length - 1].parts[0].text : '';
-            const chatHtml = `<strong>[Internal AI]</strong> যেহেতু আমি লাইভ মার্কেট ডাটা পড়ছি ("${lastMsg}") এবং আপনার দেওয়া API কী কাজ করছে না, আমি শুধু বর্তমান মার্কেটের অবস্থা বলতে পারবো। রিয়ে-টাইম ডাটা অনুযায়ী নিচের পয়েন্টগুলো দেখুন:<br><br>${internalHtml}`;
-            res.json({ success: true, text: chatHtml, internal: true });
-        }
+        res.json({ success: true, text: `<strong>[Internal AI]</strong> ${prefix}${internalHtml}`, internal: true });
         
     } catch(err) {
         console.error("JARVIS Chat Error:", err);
-        const internalHtml = generateInternalJarvisAnalysis(req.body);
-        const chatHtml = `<strong>[Internal AI]</strong> API Error! তবে আমি লাইভ ডাটা থেকে বর্তমান মার্কেট অনুযায়ী নিচের অ্যানালাইসিসটি তৈরি করেছি:<br><br>${internalHtml}`;
-        res.json({ success: true, text: chatHtml, internal: true });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
