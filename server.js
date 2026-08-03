@@ -597,8 +597,12 @@ async function fetchAndStoreBTCDeepLiquidity() {
         const bid5 = calculateVolume(bids, 0.05, true);
         const ask5 = calculateVolume(asks, 0.05, false);
 
-        await dbRun(`INSERT INTO btc_deep_liquidity (bid_vol_1, ask_vol_1, bid_vol_2, ask_vol_2, bid_vol_5, ask_vol_5) VALUES (?,?,?,?,?,?)`, 
-            [bid1, ask1, bid2, ask2, bid5, ask5]);
+        const newRecord = new BtcDeepLiquidity({
+            bid_vol_1: bid1, ask_vol_1: ask1,
+            bid_vol_2: bid2, ask_vol_2: ask2,
+            bid_vol_5: bid5, ask_vol_5: ask5
+        });
+        await newRecord.save();
         
         // Auto-delete records older than 24 hours
         await BtcDeepLiquidity.deleteMany({ timestamp: { $lte: new Date(Date.now() - 24 * 60 * 60000) } });
