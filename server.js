@@ -25,7 +25,6 @@ app.post('/api/set-symbol', (req, res) => {
     res.json({success: true, symbol: SYMBOL});
 });
 
-
 // --- PROXY ENDPOINT FOR CHART ---
 app.get('/api/proxy/klines', async (req, res) => {
     try {
@@ -75,7 +74,6 @@ const hedgeFundSchema = new mongoose.Schema({
 });
 const HedgeFundData = mongoose.model('HedgeFundData', hedgeFundSchema);
 console.log("[DB] HedgeFundData schema ready (84h TTL).");
-
 
 const BtcDeepLiquiditySchema = new mongoose.Schema({
     timestamp: { type: Date, default: Date.now, index: { expireAfterSeconds: 172800 } }, // 48h TTL
@@ -629,153 +627,80 @@ app.get('/api/onchain-liquidity', async (req, res) => {
 // 1. Live dashboard
 app.get('/api/btc-radar', async(req, res) => {
     try {
-        // Get Live Price
+        // --- Step 1: Get Live BTC Price ---
         let currentPrice = null;
         try {
-            const priceRes = await axios.get(`https://api1.binance.com/api/v3/ticker/price?symbol=BTCUSDT`, { timeout: 3000 })
-        const last1440 = await BtcDeepLiquidity.find().sort({ _id: -1 }).limit(1440).lean();
-        let spoofStats = {
-            '5m': { totalBids: 0, realBids: 0, fakeBids: 0, totalAsks: 0, realAsks: 0, fakeAsks: 0 },
-            '15m': { totalBids: 0, realBids: 0, fakeBids: 0, totalAsks: 0, realAsks: 0, fakeAsks: 0 },
-            '1h': { totalBids: 0, realBids: 0, fakeBids: 0, totalAsks: 0, realAsks: 0, fakeAsks: 0 },
-            '4h': { totalBids: 0, realBids: 0, fakeBids: 0, totalAsks: 0, realAsks: 0, fakeAsks: 0 },
-            '24h': { totalBids: 0, realBids: 0, fakeBids: 0, totalAsks: 0, realAsks: 0, fakeAsks: 0 }
-        };
-        
-        if (last1440 && last1440.length > 0) {
-            const calculateSpoof = (rows) => {
-                if(rows.length === 0) return null;
-                let sumBids = 0, sumAsks = 0, maxBids = 0, maxAsks = 0;
-                rows.forEach(r => {
-                    const bids = r.bid_vol_1 + r.bid_vol_2 + r.bid_vol_5;
-                    const asks = r.ask_vol_1 + r.ask_vol_2 + r.ask_vol_5;
-                    sumBids += bids;
-                    sumAsks += asks;
-                    if(bids > maxBids) maxBids = bids;
-                    if(asks > maxAsks) maxAsks = asks;
-                });
-                const avgBids = sumBids / rows.length;
-                const avgAsks = sumAsks / rows.length;
-                return {
-                    totalBids: maxBids,
-                    realBids: avgBids,
-                    fakeBids: maxBids - avgBids,
-                    totalAsks: maxAsks,
-                    realAsks: avgAsks,
-                    fakeAsks: maxAsks - avgAsks
-                };
-            };
-            
-            spoofStats['5m'] = calculateSpoof(last1440.slice(0, 5)) || spoofStats['5m'];
-            spoofStats['15m'] = calculateSpoof(last1440.slice(0, 15)) || spoofStats['15m'];
-            spoofStats['1h'] = calculateSpoof(last1440.slice(0, 60)) || spoofStats['1h'];
-            spoofStats['4h'] = calculateSpoof(last1440.slice(0, 240)) || spoofStats['4h'];
-            spoofStats['24h'] = calculateSpoof(last1440) || spoofStats['24h'];
-        }
-        
-        // Add spoofStats to the json response
-        ;
+            const priceRes = await axios.get(`https://api1.binance.com/api/v3/ticker/price?symbol=BTCUSDT`, { timeout: 3000 });
             currentPrice = parseFloat(priceRes.data.price);
         } catch (e) {
-            console.error("Failed to fetch live BTC price for radar", e.message);
+            console.error("Failed to fetch live BTC price for radar:", e.message);
         }
 
-        // Get Last 5 minutes for Anti-Spoof (TWAP)
+        // --- Step 2: Get Last 5 snapshots for TWAP ---
         const last5 = await BtcDeepLiquidity.find().sort({ _id: -1 }).limit(5).lean();
-        if (!last5 || last5.length === 0) return res.json({ success: false, msg: 'No data yet' });
+        if (!last5 || last5.length === 0) return res.json({ success: false, msg: 'No data yet. Server collecting data...' });
 
         const latest = last5[0];
-        
-        // Calculate 5-min Average
         let avg = { ...latest };
         const keys = ['bid_vol_1', 'ask_vol_1', 'bid_vol_2', 'ask_vol_2', 'bid_vol_5', 'ask_vol_5'];
         for (let key of keys) {
             let sum = 0;
-            for (let row of last5) sum += row[key];
+            for (let row of last5) sum += (row[key] || 0);
             avg[key] = sum / last5.length;
         }
-        
-        // Get 15m ago
+
+        // --- Step 3: Get 15m and 1h historical snapshots ---
         const m15 = await BtcDeepLiquidity.findOne({ timestamp: { $lte: new Date(Date.now() - 15 * 60000) } }).sort({ _id: -1 }).lean();
-        
-        // Get 1h ago
-        const h1 = await BtcDeepLiquidity.findOne({ timestamp: { $lte: new Date(Date.now() - 60 * 60000) } }).sort({ _id: -1 }).lean();
-        
-        // Calculate 15m CVD from Binance Klines
+        const h1  = await BtcDeepLiquidity.findOne({ timestamp: { $lte: new Date(Date.now() - 60 * 60000) } }).sort({ _id: -1 }).lean();
+
+        // --- Step 4: Calculate 15m CVD from Binance Klines ---
         let cvdData = null;
         try {
             const klineRes = await axios.get(`https://api1.binance.com/api/v3/klines?symbol=BTCUSDT&interval=15m&limit=1`, { timeout: 3000 });
             if (klineRes.data && klineRes.data.length > 0) {
                 const k = klineRes.data[0];
-                const totalVol = parseFloat(k[5]); // Total base asset volume
-                const takerBuyVol = parseFloat(k[9]); // Taker buy base asset volume
+                const totalVol    = parseFloat(k[5]);
+                const takerBuyVol = parseFloat(k[9]);
                 const takerSellVol = totalVol - takerBuyVol;
-                
-                cvdData = {
-                    totalVol,
-                    buyVol: takerBuyVol,
-                    sellVol: takerSellVol,
-                    netCvd: takerBuyVol - takerSellVol
-                };
+                cvdData = { totalVol, buyVol: takerBuyVol, sellVol: takerSellVol, netCvd: takerBuyVol - takerSellVol };
             }
         } catch(e) {
-            console.error("Failed to fetch CVD", e.message);
+            console.error("Failed to fetch CVD:", e.message);
         }
 
-        // --- NEW: Spoofing Analysis (Max vs Avg) ---
+        // --- Step 5: Spoofing Analysis (Max vs Avg over timeframes) ---
         const last1440 = await BtcDeepLiquidity.find().sort({ _id: -1 }).limit(1440).lean();
-        let spoofStats = {
-            '5m': { totalBids: 0, realBids: 0, fakeBids: 0, totalAsks: 0, realAsks: 0, fakeAsks: 0 },
-            '15m': { totalBids: 0, realBids: 0, fakeBids: 0, totalAsks: 0, realAsks: 0, fakeAsks: 0 },
-            '1h': { totalBids: 0, realBids: 0, fakeBids: 0, totalAsks: 0, realAsks: 0, fakeAsks: 0 },
-            '4h': { totalBids: 0, realBids: 0, fakeBids: 0, totalAsks: 0, realAsks: 0, fakeAsks: 0 },
-            '24h': { totalBids: 0, realBids: 0, fakeBids: 0, totalAsks: 0, realAsks: 0, fakeAsks: 0 }
-        };
-        
+        const emptySpoof = { totalBids: 0, realBids: 0, fakeBids: 0, totalAsks: 0, realAsks: 0, fakeAsks: 0 };
+        let spoofStats = { '5m': {...emptySpoof}, '15m': {...emptySpoof}, '1h': {...emptySpoof}, '4h': {...emptySpoof}, '24h': {...emptySpoof} };
+
         if (last1440 && last1440.length > 0) {
             const calculateSpoof = (rows) => {
-                if(rows.length === 0) return null;
+                if (!rows || rows.length === 0) return null;
                 let sumBids = 0, sumAsks = 0, maxBids = 0, maxAsks = 0;
                 rows.forEach(r => {
-                    const bids = r.bid_vol_1 + r.bid_vol_2 + r.bid_vol_5;
-                    const asks = r.ask_vol_1 + r.ask_vol_2 + r.ask_vol_5;
-                    sumBids += bids;
-                    sumAsks += asks;
-                    if(bids > maxBids) maxBids = bids;
-                    if(asks > maxAsks) maxAsks = asks;
+                    const bids = (r.bid_vol_1||0) + (r.bid_vol_2||0) + (r.bid_vol_5||0);
+                    const asks = (r.ask_vol_1||0) + (r.ask_vol_2||0) + (r.ask_vol_5||0);
+                    sumBids += bids; sumAsks += asks;
+                    if (bids > maxBids) maxBids = bids;
+                    if (asks > maxAsks) maxAsks = asks;
                 });
                 const avgBids = sumBids / rows.length;
                 const avgAsks = sumAsks / rows.length;
-                return {
-                    totalBids: maxBids,
-                    realBids: avgBids,
-                    fakeBids: maxBids - avgBids,
-                    totalAsks: maxAsks,
-                    realAsks: avgAsks,
-                    fakeAsks: maxAsks - avgAsks
-                };
+                return { totalBids: maxBids, realBids: avgBids, fakeBids: maxBids - avgBids, totalAsks: maxAsks, realAsks: avgAsks, fakeAsks: maxAsks - avgAsks };
             };
-            
-            spoofStats['5m'] = calculateSpoof(last1440.slice(0, 5)) || spoofStats['5m'];
-            spoofStats['15m'] = calculateSpoof(last1440.slice(0, 15)) || spoofStats['15m'];
-            spoofStats['1h'] = calculateSpoof(last1440.slice(0, 60)) || spoofStats['1h'];
-            spoofStats['4h'] = calculateSpoof(last1440.slice(0, 240)) || spoofStats['4h'];
-            spoofStats['24h'] = calculateSpoof(last1440) || spoofStats['24h'];
+            spoofStats['5m']  = calculateSpoof(last1440.slice(0, 5))   || emptySpoof;
+            spoofStats['15m'] = calculateSpoof(last1440.slice(0, 15))  || emptySpoof;
+            spoofStats['1h']  = calculateSpoof(last1440.slice(0, 60))  || emptySpoof;
+            spoofStats['4h']  = calculateSpoof(last1440.slice(0, 240)) || emptySpoof;
+            spoofStats['24h'] = calculateSpoof(last1440)               || emptySpoof;
         }
 
         res.json({
             success: true,
-            data: {
-                currentPrice,
-                live: avg, // Filtered TWAP data
-                m15: m15 || avg,
-                h1: h1 || avg,
-                cvdData,
-                spoofStats
-            }
+            data: { currentPrice, live: avg, m15: m15 || avg, h1: h1 || avg, cvdData, spoofStats }
         });
     } catch(err) {
-        console.error(err);
+        console.error('[btc-radar] Error:', err.message);
         res.status(500).json({ error: err.message });
     }
 });
@@ -1113,6 +1038,8 @@ app.get('/api/brain/insights', (req, res) => {
 
 // ─── LIVE ORDER FLOW & RETAIL TRAP TRACKING (WebSockets) ────────────────────
 let liveOrderFlow = {
+    vpPOC: null,
+    vpDesc: '',
     whaleWallBid: null, // { price, qty }
     whaleWallAsk: null, // { price, qty }
     cvd: 0,
@@ -1196,12 +1123,10 @@ setInterval(() => fetchMacroData('BTCUSDT'), 5 * 60 * 1000);
 setTimeout(() => fetchMacroData('BTCUSDT'), 2000);
 
 
-
 let lastWhaleWallBid = null;
 let lastWhaleWallAsk = null;
 
 let lastTradeId = 0;
-
 
 const WS_BASE = 'wss://stream.binance.com:9443/ws';
 let wsDepth = null;
@@ -1311,7 +1236,6 @@ connectTradeStream(SYMBOL);
 
 
 
-
 // Endpoint for Strategy Lab UI
 app.get('/api/orderflow', (req, res) => {
     res.json(liveOrderFlow);
@@ -1335,7 +1259,6 @@ setInterval(async () => {
         console.error("Cleanup error:", err);
     }
 }, 60000);
-
 
 // --- Open Interest (OI) & Killzone Logic ---
 function getKillzone() {
@@ -1532,9 +1455,9 @@ setTimeout(updateAuthenticityStats, 5000);
 
 fetchHedgeFundData('BTCUSDT');
 
-
 // --- Internal JARVIS AI Engine ---
 function generateInternalJarvisAnalysis(data) {
+    const curPrice = liveOrderFlow.currentPrice || 0;
     const price    = liveOrderFlow.currentPrice || data.currentPrice;
     const cvdNet   = liveOrderFlow.cvd || (data.cvdData ? data.cvdData.netCvd : 0);
     const wsBid    = liveOrderFlow.whaleWallBid;
@@ -1625,6 +1548,8 @@ function generateInternalJarvisAnalysis(data) {
 
     if (ls > 0) {
         html += '<br><hr style="border-color:#333; margin:15px 0;">';
+    
+
         html += '<strong>&#127976; Hedge Fund Desk (Leverage & Liquidations):</strong><br>';
 
         let frColor = fr > 0.0001 ? 'var(--sell)' : (fr < -0.0001 ? 'var(--buy)' : '#fff');
@@ -1700,9 +1625,11 @@ function generateInternalJarvisAnalysis(data) {
 
     // ===== 3.5 INSTITUTIONAL HUNT ZONES =====
     const topZones = liveOrderFlow.history24H.topLiqZones || [];
-    const curPrice = liveOrderFlow.currentPrice || 0;
+    
     if (topZones.length > 0) {
         html += '<br><hr style="border-color:#333; margin:15px 0;">';
+    
+
         html += '<strong>&#127919; Institutional Liquidity Hunt Map (24H):</strong><br>';
         html += '<small style="color:#888;">ওয়েলসরা যে প্রাইস জোনগুলোতে সবচেয়ে বেশি লিকুইডেশন করেছে:</small><br><br>';
 
@@ -1719,6 +1646,7 @@ function generateInternalJarvisAnalysis(data) {
 
     // ===== 4. VERDICT =====
     html += '<br><hr style="border-color:#333; margin:15px 0;">';
+
     let verdictStr = '';
     if (trapType === 'Bear Trap' || (is1DBull && cvdNet > 10)) {
         if (typeof spoofIntent !== 'undefined' && spoofIntent === 'Distribution') {
@@ -1775,7 +1703,6 @@ app.post('/api/jarvis-chat', async (req, res) => {
     }
 });
 
-
 // Liquidation Heatmap API
 app.get('/api/liq-heatmap', (req, res) => {
     const currentPrice = liveOrderFlow.currentPrice || 0;
@@ -1800,5 +1727,52 @@ app.get('/api/liq-heatmap', (req, res) => {
         }
     });
 });
+
+// --- Volume Profile (POC) Backend Engine ---
+async function updateVolumeProfile() {
+    try {
+        // Macro POC (300 hours)
+        const resMacro = await axios.get('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1h&limit=300');
+        const klinesMacro = resMacro.data;
+        if (klinesMacro && klinesMacro.length) {
+            const prices = klinesMacro.map(k => (parseFloat(k[2]) + parseFloat(k[3])) / 2);
+            const minP = Math.min(...prices);
+            const maxP = Math.max(...prices);
+            const bucketSize = (maxP - minP) / 12;
+            const buckets = Array.from({length: 12}, (_,i) => ({ priceLow: minP + i * bucketSize, priceHigh: minP + (i+1) * bucketSize, vol: 0 }));
+            klinesMacro.forEach(k => {
+                const mid = (parseFloat(k[2]) + parseFloat(k[3])) / 2;
+                const idx = Math.min(Math.floor((mid - minP) / bucketSize), 11);
+                buckets[idx].vol += parseFloat(k[5]);
+            });
+            let maxV = 0, pocBucket = null;
+            buckets.forEach(b => { if(b.vol > maxV) { maxV = b.vol; pocBucket = b; } });
+            if (pocBucket) liveOrderFlow.vpPOC_macro = (pocBucket.priceLow + pocBucket.priceHigh) / 2;
+        }
+
+        // Micro POC (24 hours -> 96 * 15m)
+        const resMicro = await axios.get('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=15m&limit=96');
+        const klinesMicro = resMicro.data;
+        if (klinesMicro && klinesMicro.length) {
+            const prices = klinesMicro.map(k => (parseFloat(k[2]) + parseFloat(k[3])) / 2);
+            const minP = Math.min(...prices);
+            const maxP = Math.max(...prices);
+            const bucketSize = (maxP - minP) / 12;
+            const buckets = Array.from({length: 12}, (_,i) => ({ priceLow: minP + i * bucketSize, priceHigh: minP + (i+1) * bucketSize, vol: 0 }));
+            klinesMicro.forEach(k => {
+                const mid = (parseFloat(k[2]) + parseFloat(k[3])) / 2;
+                const idx = Math.min(Math.floor((mid - minP) / bucketSize), 11);
+                buckets[idx].vol += parseFloat(k[5]);
+            });
+            let maxV = 0, pocBucket = null;
+            buckets.forEach(b => { if(b.vol > maxV) { maxV = b.vol; pocBucket = b; } });
+            if (pocBucket) liveOrderFlow.vpPOC_micro = (pocBucket.priceLow + pocBucket.priceHigh) / 2;
+        }
+    } catch (e) {
+        console.log("Error updating VP:", e.message);
+    }
+}
+setInterval(updateVolumeProfile, 5 * 60 * 1000); // Every 5 mins
+updateVolumeProfile(); // Initial run
 
 app.listen(PORT, () => console.log(`[SERVER] Alpha-Flow SMC Brain v4 running on port ${PORT}`));
