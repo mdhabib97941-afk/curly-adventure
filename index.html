@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Whale Tracker</title>
+  <style>
+:root {
+  --bg-primary: #0f172a;
+  --bg-secondary: #1e293b;
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --accent-color: #3b82f6;
+  --long-color: #10b981;
+  --short-color: #ef4444;
+  --card-bg: rgba(30, 41, 59, 0.7);
+  --border-color: rgba(255, 255, 255, 0.1);
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: var(--bg-primary);
+  background-image: 
+    radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.15) 0px, transparent 50%),
+    radial-gradient(at 100% 0%, rgba(139, 92, 246, 0.15) 0px, transparent 50%);
+  background-attachment: fixed;
+  color: var(--text-primary);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+#root {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.dashboard-container {
+  max-width: 1300px;
+  margin: 0 auto;
+  padding: 2rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 3rem;
+}
+
+h1 {
+  font-size: 2.8rem;
+  margin: 0;
+  background: linear-gradient(135deg, #60a5fa 0%, #a78bfa 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  text-shadow: 0 4px 20px rgba(59, 130, 246, 0.3);
+  letter-spacing: -1px;
+}
+
+.controls select {
+  background: rgba(30, 41, 59, 0.8);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  padding: 0.75rem 1.5rem;
+  border-radius: 0.75rem;
+  font-size: 1rem;
+  font-weight: 600;
+  outline: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}
+
+.controls select:hover {
+  border-color: var(--accent-color);
+  background: rgba(45, 55, 72, 0.9);
+}
+
+.controls select:focus {
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+}
+
+/* Glass Cards */
+.glass-card, .tf-card, .insights-card, .feed-container {
+  background: var(--card-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-color);
+  border-radius: 1.25rem;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+/* Timeframe Grid */
+.mtf-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 3rem;
+}
+
+.tf-card {
+  padding: 1.5rem;
+}
+
+.tf-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.tf-title {
+  font-size: 1.1rem;
+  color: var(--text-secondary);
+  margin-top: 0;
+  margin-bottom: 1.5rem;
+  font-weight: 600;
+}
+
+/* Ratio Bars */
+.ratio-display {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  margin-bottom: 0.75rem;
+}
+
+.ratio-value {
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.long-value { color: var(--long-color); }
+.short-value { color: var(--short-color); }
+
+.bar-container {
+  width: 100%;
+  height: 8px;
+  background-color: rgba(239, 68, 68, 0.2);
+  border-radius: 4px;
+  overflow: hidden;
+  display: flex;
+}
+
+.long-bar {
+  height: 100%;
+  background-color: var(--long-color);
+  transition: width 1s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
+}
+
+/* Bias Badge */
+.bias-header {
+  margin-bottom: 2rem;
+}
+
+.bias-badge {
+  display: inline-block;
+  padding: 0.75rem 2rem;
+  border-radius: 50px;
+  font-size: 1.5rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+}
+
+.bias-strong-bullish { background: linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(16, 185, 129, 0.4) 100%); color: #34d399; border: 1px solid #10b981; box-shadow: 0 0 20px rgba(16, 185, 129, 0.3); }
+.bias-bullish { background: rgba(16, 185, 129, 0.1); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.5); }
+.bias-neutral { background: rgba(148, 163, 184, 0.1); color: #94a3b8; border: 1px solid rgba(148, 163, 184, 0.5); }
+.bias-bearish { background: rgba(239, 68, 68, 0.1); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.5); }
+.bias-strong-bearish { background: linear-gradient(135deg, rgba(239, 68, 68, 0.2) 0%, rgba(239, 68, 68, 0.4) 100%); color: #f87171; border: 1px solid #ef4444; box-shadow: 0 0 20px rgba(239, 68, 68, 0.3); }
+
+/* Smart Insights */
+.insights-card {
+  padding: 1.5rem;
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+.insights-title {
+  color: #60a5fa;
+  margin-top: 0;
+  margin-bottom: 1rem;
+  font-size: 1.2rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.insight-item {
+  margin-bottom: 0.5rem;
+  font-size: 1.05rem;
+  line-height: 1.5;
+  padding-left: 0.5rem;
+  position: relative;
+}
+
+.insight-warning { color: #fbbf24; }
+.insight-good { color: #34d399; }
+.insight-neutral { color: var(--text-primary); }
+
+/* Magnet Zones (Walls) */
+.walls-title-main {
+  font-size: 1.4rem;
+  color: var(--text-primary);
+  margin-top: 0;
+  margin-bottom: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.walls-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.wall-column {
+  background: rgba(15, 23, 42, 0.4);
+  border-radius: 1rem;
+  padding: 1.25rem;
+}
+
+.wall-column h4 {
+  margin-top: 0;
+  margin-bottom: 1rem;
+  font-size: 1.1rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.wall-sell-title { color: #f87171; text-align: center; }
+.wall-buy-title { color: #34d399; text-align: center; }
+
+.wall-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 1.05rem;
+}
+
+.wall-item:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.wall-price {
+  font-family: monospace;
+  font-size: 1.15rem;
+  color: var(--text-primary);
+}
+
+.wall-size {
+  font-weight: 600;
+}
+
+.wall-sell { color: var(--short-color); }
+.wall-buy { color: var(--long-color); }
+
+/* Live Feed */
+.feed-container {
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.feed-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 1rem;
+}
+
+.feed-title {
+  font-size: 1.4rem;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.live-indicator {
+  width: 12px;
+  height: 12px;
+  background-color: #ef4444;
+  border-radius: 50%;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+  70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
+
+.trade-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.trade-list::-webkit-scrollbar {
+  width: 8px;
+}
+.trade-list::-webkit-scrollbar-track {
+  background: rgba(0,0,0,0.1);
+  border-radius: 4px;
+}
+.trade-list::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.2);
+  border-radius: 4px;
+}
+
+.trade-item {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.5fr 1fr;
+  padding: 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  align-items: center;
+  animation: slideIn 0.3s ease-out;
+}
+
+.trade-item.header {
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  font-size: 0.9rem;
+  border-bottom: 2px solid var(--border-color);
+  position: sticky;
+  top: 0;
+  background: transparent;
+  z-index: 10;
+  padding-bottom: 0.75rem;
+  animation: none;
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.trade-item.long {
+  background: linear-gradient(90deg, rgba(16, 185, 129, 0.1) 0%, transparent 100%);
+  border-left: 4px solid var(--long-color);
+}
+
+.trade-item.short {
+  background: linear-gradient(90deg, rgba(239, 68, 68, 0.1) 0%, transparent 100%);
+  border-left: 4px solid var(--short-color);
+}
+
+.trade-time { color: var(--text-secondary); font-size: 0.9rem; }
+.trade-price { font-family: monospace; font-size: 1.1rem; }
+.trade-value { font-weight: bold; font-size: 1.15rem; }
+.trade-side { font-weight: bold; text-transform: uppercase; }
+.trade-side.long { color: var(--long-color); }
+.trade-side.short { color: var(--short-color); }
+
+.empty-feed {
+  text-align: center;
+  padding: 3rem;
+  color: var(--text-secondary);
+  font-style: italic;
+  font-size: 1.1rem;
+}
+
+.loading {
+  text-align: center;
+  padding: 4rem;
+  font-size: 1.2rem;
+  color: var(--text-secondary);
+  animation: pulse-opacity 1.5s infinite ease-in-out;
+}
+
+@keyframes pulse-opacity {
+  0% { opacity: 0.6; }
+  50% { opacity: 1; }
+  100% { opacity: 0.6; }
+}
+</style>
+</head>
+<body>
+  <div id="root">
+    <div class="dashboard-container">
+      <header>
+        <h1>Whale Tracker</h1>
+        <div class="controls">
+          <select id="symbol-select">
+            <!-- Populated by JS -->
+          </select>
+        </div>
+      </header>
+      
+      <div id="loading" class="loading">Loading Multi-Timeframe Data...</div>
+      <div id="error" class="error" style="display: none;"></div>
+
+      <div id="main-content" style="display: none;">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 2rem; margin-bottom: 3rem; align-items: start;">
+          
+          <!-- Left Column -->
+          <div>
+            <div class="bias-header" style="margin-bottom: 2rem;">
+              <h3 style="color: var(--text-secondary); margin: 0 0 1rem 0; text-transform: uppercase; letter-spacing: 2px;">
+                Overall Market Bias
+              </h3>
+              <div id="bias-badge" class="bias-badge"></div>
+              <div style="margin-top: 1rem; font-size: 1.2rem; color: var(--text-secondary);">
+                Current Price: <strong id="current-price"></strong>
+                <span id="price-change" style="margin-left: 10px;"></span>
+              </div>
+            </div>
+            
+            <div class="insights-card" style="margin: 0; max-width: 100%;">
+              <h3 class="insights-title">🤖 Smart Insights</h3>
+              <div id="insights-list"></div>
+            </div>
+          </div>
+
+          <!-- Right Column -->
+          <div>
+            <div id="magnet-zones-container" style="background: rgba(30, 41, 59, 0.4); padding: 1rem; border-radius: 1rem; border: 1px solid var(--border-color); height: auto; display: none;">
+              <h3 class="walls-title-main" style="font-size: 1.2rem; margin-top: 0; margin-bottom: 1rem;">🐋 Magnet Zones (80-Day Volume)</h3>
+              <div class="walls-container" style="margin-bottom: 0; gap: 0.75rem;">
+                
+                <div class="wall-column" style="padding: 0.75rem; min-width: 0;">
+                  <h4 class="wall-sell-title" style="margin: 0 0 0.75rem 0; font-size: 1rem;">Resistance</h4>
+                  <div id="resistance-list"></div>
+                </div>
+                
+                <div class="wall-column" style="padding: 0.75rem; min-width: 0;">
+                  <h4 class="wall-buy-title" style="margin: 0 0 0.75rem 0; font-size: 1rem;">Support</h4>
+                  <div id="support-list"></div>
+                </div>
+              </div>
+            </div>
+            <div id="magnet-loading" class="loading" style="height: 100%; display: flex; align-items: center; justify-content: center;">
+              Calculating Historical Volume Profile...
+            </div>
+          </div>
+        </div>
+
+        <div id="mtf-grid" class="mtf-grid">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+
+      <!-- Live Whale Orders Feed -->
+      <div class="feed-container">
+        <div class="feed-header">
+          <h2 class="feed-title">
+            <div class="live-indicator"></div> Live Whale Orders
+          </h2>
+          <div class="controls">
+            <span style="color: var(--text-secondary); align-self: center;">Min Order Size:</span>
+            <select id="whale-threshold">
+              <option value="50000">$50k (Active)</option>
+              <option value="100000" selected>$100k</option>
+              <option value="250000">$250k</option>
+              <option value="500000">$500k (Rare)</option>
+              <option value="1000000">$1M (Extreme)</option>
+            </select>
+          </div>
+        </div>
+        
+        <div id="empty-feed" class="empty-feed">Waiting for orders...</div>
+        
+        <ul id="trade-list" class="trade-list" style="display: none;">
+          <li class="trade-item header">
+            <div>Time</div>
+            <div>Price</div>
+            <div>Total Value</div>
+            <div>Type</div>
+          </li>
+          <!-- Trades will be prepended here -->
+        </ul>
+      </div>
+
+    </div>
+  </div>
+  <script>
+const API_BASE = '/api';
+const WS_URL = `ws://${window.location.host}`;
+
+const TIMEFRAMES = ['15m', '4h', '1d'];
+const TIMEFRAME_LABELS = {
+  '15m': 'Short Term (15m)',
+  '4h': 'Medium Term (4h)',
+  '1d': 'Long Term (1d)'
+};
+
+let selectedSymbol = 'BTCUSDT';
+let whaleThreshold = 100000;
+let ws = null;
+let mtfInterval = null;
+let liveTrades = [];
+
+// DOM Elements
+const symbolSelect = document.getElementById('symbol-select');
+const thresholdSelect = document.getElementById('whale-threshold');
+const loadingDiv = document.getElementById('loading');
+const errorDiv = document.getElementById('error');
+const mainContent = document.getElementById('main-content');
+const biasBadge = document.getElementById('bias-badge');
+const currentPriceEl = document.getElementById('current-price');
+const priceChangeEl = document.getElementById('price-change');
+const insightsList = document.getElementById('insights-list');
+const magnetZonesContainer = document.getElementById('magnet-zones-container');
+const magnetLoading = document.getElementById('magnet-loading');
+const resistanceList = document.getElementById('resistance-list');
+const supportList = document.getElementById('support-list');
+const mtfGrid = document.getElementById('mtf-grid');
+const tradeList = document.getElementById('trade-list');
+const emptyFeed = document.getElementById('empty-feed');
+
+const formatPrice = (price) => {
+  const p = parseFloat(price);
+  if (p < 0.0001) return p.toPrecision(4);
+  if (p < 1) return p.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 6 });
+  if (p < 100) return p.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+  return p.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+};
+
+async function init() {
+  try {
+    const res = await fetch(`${API_BASE}/symbols`);
+    const symbols = await res.json();
+    symbolSelect.innerHTML = '';
+    symbols.forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s;
+      opt.textContent = s;
+      if (s === selectedSymbol) opt.selected = true;
+      symbolSelect.appendChild(opt);
+    });
+  } catch (err) {
+    console.error('Failed to load symbols', err);
+  }
+
+  symbolSelect.addEventListener('change', (e) => {
+    selectedSymbol = e.target.value;
+    loadDashboardData();
+  });
+  
+  thresholdSelect.addEventListener('change', (e) => {
+    whaleThreshold = Number(e.target.value);
+    emptyFeed.textContent = `Waiting for >${whaleThreshold/1000}k orders on ${selectedSymbol}...`;
+    renderTrades();
+  });
+
+  loadDashboardData();
+  connectWs();
+}
+
+async function loadDashboardData() {
+  loadingDiv.style.display = 'block';
+  mainContent.style.display = 'none';
+  errorDiv.style.display = 'none';
+  
+  await fetch(`${API_BASE}/set-symbol`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ symbol: selectedSymbol })
+  });
+
+  liveTrades = [];
+  renderTrades();
+  emptyFeed.textContent = `Waiting for >${whaleThreshold/1000}k orders on ${selectedSymbol}...`;
+
+  if (mtfInterval) clearInterval(mtfInterval);
+  fetchMtfData();
+  mtfInterval = setInterval(fetchMtfData, 60000);
+}
+
+async function fetchMtfData() {
+  try {
+    const requests = TIMEFRAMES.map(tf => fetch(`${API_BASE}/whale-data?symbol=${selectedSymbol}&period=${tf}`).then(r => r.json()));
+    requests.push(fetch(`https://fapi.binance.com/fapi/v1/ticker/24hr?symbol=${selectedSymbol}`).then(r => r.json()));
+    
+    const responses = await Promise.all(requests);
+    
+    const mtfData = {};
+    let bullishScore = 0;
+    let bearishScore = 0;
+
+    for(let i=0; i<3; i++) {
+      const data = responses[i];
+      const tf = TIMEFRAMES[i];
+      mtfData[tf] = data;
+      
+      if (data.accounts && data.accounts.longAccount) {
+        const longPercent = parseFloat(data.accounts.longAccount) * 100;
+        if (longPercent > 53) bullishScore += 2;
+        else if (longPercent > 51) bullishScore += 1;
+        else if (longPercent < 47) bearishScore += 2;
+        else if (longPercent < 49) bearishScore += 1;
+      }
+    }
+    
+    const tickerData = responses[3];
+    const netScore = bullishScore - bearishScore;
+    
+    let biasObj = { score: netScore };
+    if (netScore >= 4) biasObj = { ...biasObj, text: 'Strong Bullish', class: 'bias-strong-bullish' };
+    else if (netScore >= 2) biasObj = { ...biasObj, text: 'Bullish', class: 'bias-bullish' };
+    else if (netScore <= -4) biasObj = { ...biasObj, text: 'Strong Bearish', class: 'bias-strong-bearish' };
+    else if (netScore <= -2) biasObj = { ...biasObj, text: 'Bearish', class: 'bias-bearish' };
+    else biasObj = { ...biasObj, text: 'Neutral', class: 'bias-neutral' };
+
+    renderMtf(mtfData, tickerData, biasObj);
+    fetchMagnetZones(tickerData);
+
+  } catch (err) {
+    console.error(err);
+    errorDiv.textContent = 'Failed to fetch data';
+    errorDiv.style.display = 'block';
+  } finally {
+    loadingDiv.style.display = 'none';
+    mainContent.style.display = 'block';
+  }
+}
+
+async function fetchMagnetZones(tickerData) {
+  magnetZonesContainer.style.display = 'none';
+  magnetLoading.style.display = 'flex';
+  
+  try {
+    const res = await fetch(`${API_BASE}/klines?symbol=${selectedSymbol}&interval=1d&limit=80`);
+    const klines = await res.json();
+    
+    if (!klines || klines.length === 0) return;
+
+    let minPrice = Infinity;
+    let maxPrice = 0;
+
+    klines.forEach(k => {
+      const low = parseFloat(k[3]);
+      const high = parseFloat(k[2]);
+      if (low < minPrice) minPrice = low;
+      if (high > maxPrice) maxPrice = high;
+    });
+
+    const NUM_BINS = 20;
+    const binSize = (maxPrice - minPrice) / NUM_BINS;
+    const bins = Array.from({ length: NUM_BINS }, (_, i) => ({
+      priceStart: minPrice + (i * binSize),
+      priceEnd: minPrice + ((i + 1) * binSize),
+      midPrice: minPrice + ((i + 0.5) * binSize),
+      volumeUsdt: 0
+    }));
+
+    klines.forEach(k => {
+      const volUsdt = parseFloat(k[7]); 
+      const typicalPrice = (parseFloat(k[2]) + parseFloat(k[3]) + parseFloat(k[4])) / 3;
+      const binIndex = Math.min(Math.floor((typicalPrice - minPrice) / binSize), NUM_BINS - 1);
+      if (binIndex >= 0) bins[binIndex].volumeUsdt += volUsdt;
+    });
+
+    const sortedBins = [...bins].sort((a, b) => b.volumeUsdt - a.volumeUsdt);
+    const topBins = sortedBins.slice(0, 6);
+    const currentPrice = parseFloat(tickerData.lastPrice);
+    
+    const supports = topBins.filter(b => b.midPrice < currentPrice).sort((a,b) => b.midPrice - a.midPrice).slice(0,3);
+    const resistances = topBins.filter(b => b.midPrice >= currentPrice).sort((a,b) => a.midPrice - b.midPrice).slice(0,3);
+
+    renderMagnetZones(supports, resistances);
+  } catch(err) {
+    console.error('Failed to load magnet zones', err);
+  } finally {
+    magnetLoading.style.display = 'none';
+    magnetZonesContainer.style.display = 'block';
+  }
+}
+
+function renderMtf(mtfData, tickerData, biasObj) {
+  biasBadge.className = `bias-badge ${biasObj.class}`;
+  biasBadge.textContent = biasObj.text;
+  
+  currentPriceEl.textContent = `${formatPrice(tickerData.lastPrice)}`;
+  const priceChange = parseFloat(tickerData.priceChangePercent);
+  priceChangeEl.textContent = `(${priceChange >= 0 ? '+' : ''}${priceChange.toFixed(2)}%)`;
+  priceChangeEl.style.color = priceChange >= 0 ? 'var(--long-color)' : 'var(--short-color)';
+
+  mtfGrid.innerHTML = '';
+  TIMEFRAMES.forEach(tf => {
+    const data = mtfData[tf].accounts;
+    const div = document.createElement('div');
+    div.className = 'tf-card';
+    
+    if (data) {
+      const longPercent = (parseFloat(data.longAccount || data.longPosition) * 100).toFixed(2);
+      const shortPercent = (parseFloat(data.shortAccount || data.shortPosition) * 100).toFixed(2);
+      const ratio = parseFloat(data.longShortRatio).toFixed(4);
+      div.innerHTML = `
+        <h3 class="tf-title">${TIMEFRAME_LABELS[tf]}</h3>
+        <div>
+          <div class="ratio-display">
+            <div class="ratio-value long-value" style="font-size: 1.2rem">${longPercent}% L</div>
+            <div class="ratio-value short-value" style="font-size: 1.2rem">${shortPercent}% S</div>
+          </div>
+          <div class="bar-container">
+            <div class="long-bar" style="width: ${longPercent}%"></div>
+          </div>
+          <p style="text-align: center; color: var(--text-secondary); margin-top: 1rem; font-size: 0.9rem">
+            Ratio: <strong>${ratio}</strong>
+          </p>
+        </div>
+      `;
+    } else {
+      div.innerHTML = `<h3 class="tf-title">${TIMEFRAME_LABELS[tf]}</h3><div class="loading" style="padding: 2rem">N/A</div>`;
+    }
+    mtfGrid.appendChild(div);
+  });
+
+  const getRatio = (data) => data && data.accounts ? parseFloat(data.accounts.longAccount) * 100 : 50;
+  const shortTerm = getRatio(mtfData['15m']);
+  const midTerm = getRatio(mtfData['4h']);
+  const longTerm = getRatio(mtfData['1d']);
+
+  const insights = [];
+  if (priceChange < -1.5 && biasObj.score >= 2) {
+    insights.push({ type: 'good', text: `🚀 BULLISH DIVERGENCE: Price is DOWN (${priceChange.toFixed(2)}%), but Smart Money is buying the dip (Overall Bias is ${biasObj.text}). The bottom might be close.` });
+  } else if (priceChange > 1.5 && biasObj.score <= -2) {
+    insights.push({ type: 'warning', text: `⚠️ BEARISH DIVERGENCE: Price is UP (+${priceChange.toFixed(2)}%), but Smart Money is shorting into the pump (Overall Bias is ${biasObj.text}). A top might be forming.` });
+  }
+
+  if (longTerm > 51 && shortTerm < 49 && midTerm < 49) {
+    insights.push({ type: 'warning', text: '📉 Reversal Warning: The macro trend (1d) is Bullish, but smart money is heavily shorting the short/mid-term.' });
+  } else if (longTerm < 49 && shortTerm > 51 && midTerm > 51) {
+    insights.push({ type: 'good', text: '📈 Reversal Warning: The macro trend (1d) is Bearish, but smart money is aggressively buying the short/mid-term.' });
+  } else if (longTerm > 51 && midTerm > 51 && shortTerm > 51) {
+    if (priceChange >= 0) insights.push({ type: 'good', text: '✅ Trend Alignment: All timeframes are pointing Long. The trend is healthy.' });
+  } else if (longTerm < 49 && midTerm < 49 && shortTerm < 49) {
+    if (priceChange <= 0) insights.push({ type: 'warning', text: '✅ Trend Alignment: All timeframes are pointing Short. The downtrend is healthy.' });
+  }
+
+  if (insights.length === 0) {
+    insights.push({ type: 'neutral', text: `⚖️ Normal Market Conditions: Price is currently at ${formatPrice(tickerData.lastPrice)} (${priceChange > 0 ? '+' : ''}${priceChange.toFixed(2)}%). Top traders are mixed.` });
+  }
+
+  insightsList.innerHTML = '';
+  insights.forEach(insight => {
+    const div = document.createElement('div');
+    div.className = `insight-item insight-${insight.type}`;
+    div.textContent = insight.text;
+    insightsList.appendChild(div);
+  });
+}
+
+function renderMagnetZones(supports, resistances) {
+  resistanceList.innerHTML = '';
+  if (!resistances || resistances.length === 0) {
+    resistanceList.innerHTML = '<div class="loading" style="padding: 1rem">No clear resistance zones</div>';
+  } else {
+    resistances.forEach(w => {
+      const div = document.createElement('div');
+      div.className = 'wall-item';
+      div.innerHTML = `<span class="wall-price">~${formatPrice(w.midPrice)}</span><span class="wall-size wall-sell">Vol: ${(w.volumeUsdt / 1000000000).toFixed(2)}B</span>`;
+      resistanceList.appendChild(div);
+    });
+  }
+
+  supportList.innerHTML = '';
+  if (!supports || supports.length === 0) {
+    supportList.innerHTML = '<div class="loading" style="padding: 1rem">No clear support zones</div>';
+  } else {
+    supports.forEach(w => {
+      const div = document.createElement('div');
+      div.className = 'wall-item';
+      div.innerHTML = `<span class="wall-price">~${formatPrice(w.midPrice)}</span><span class="wall-size wall-buy">Vol: ${(w.volumeUsdt / 1000000000).toFixed(2)}B</span>`;
+      supportList.appendChild(div);
+    });
+  }
+}
+
+function connectWs() {
+  if (ws) ws.close();
+  ws = new WebSocket(WS_URL);
+  ws.onopen = () => console.log('Connected to Live Whale Feed');
+  ws.onmessage = (event) => {
+    try {
+      const trade = JSON.parse(event.data);
+      liveTrades.unshift(trade);
+      if (liveTrades.length > 100) liveTrades.pop();
+      renderTrades();
+    } catch (err) {
+      console.error('Failed to parse WS message', err);
+    }
+  };
+  ws.onclose = () => setTimeout(connectWs, 3000);
+}
+
+function renderTrades() {
+  const filteredTrades = liveTrades.filter(t => t.value >= whaleThreshold);
+  
+  if (filteredTrades.length === 0) {
+    emptyFeed.style.display = 'block';
+    tradeList.style.display = 'none';
+  } else {
+    emptyFeed.style.display = 'none';
+    tradeList.style.display = 'block';
+    
+    tradeList.innerHTML = `
+      <li class="trade-item header">
+        <div>Time</div>
+        <div>Price</div>
+        <div>Total Value</div>
+        <div>Type</div>
+      </li>
+    `;
+    
+    filteredTrades.forEach(trade => {
+      const li = document.createElement('li');
+      li.className = `trade-item ${trade.side.toLowerCase()}`;
+      li.innerHTML = `
+        <div class="trade-time">${new Date(trade.timestamp).toLocaleTimeString()}</div>
+        <div class="trade-price">${formatPrice(trade.price)}</div>
+        <div class="trade-value">${trade.value.toLocaleString(undefined, {maximumFractionDigits: 0})}</div>
+        <div class="trade-side ${trade.side.toLowerCase()}">${trade.side}</div>
+      `;
+      tradeList.appendChild(li);
+    });
+  }
+}
+
+init();
+
+</script>
+</body>
+</html>
